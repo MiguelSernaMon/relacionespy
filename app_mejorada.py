@@ -186,7 +186,7 @@ def procesar_archivos():
         return
     
     # Crear nombre del archivo de salida
-    nombre_salida = "relaciones_unidas.csv"
+    nombre_salida = "relaciones_unidas.xlsx"
     ruta_guardado = os.path.join(carpeta_destino, nombre_salida)
     
     try:
@@ -218,28 +218,66 @@ def procesar_archivos():
         df_madre_reducido['identificationPatient'] = df_madre_reducido['identificationPatient'].astype(str)
         df_ofimatic['nit'] = df_ofimatic['nit'].astype(str)
 
-        # Unir los dos dataframes
-        df_fusionado = pd.merge(df_ofimatic, df_madre_reducido, left_on='nit', right_on='identificationPatient', how='left')
-
-        # Crear la nueva columna 'Nrodcto-idOrder'
-        df_fusionado['idOrder'] = df_fusionado['idOrder'].fillna('').astype(str)
-        # Asegurarnos que idOrder no tenga decimales si viene como número
-        df_fusionado['idOrder'] = df_fusionado['idOrder'].apply(lambda x: str(int(float(x))) if x and x.replace('.','',1).isdigit() else x)
-
-        df_fusionado['Nrodcto_final'] = df_fusionado['Nrodcto'].astype(str) + '-' + df_fusionado['idOrder']
+        # En lugar de crear un nuevo DataFrame, vamos a editar el original
+        # Primero, creamos un diccionario de mapeo nit -> idOrder
+        mapeo_nit_idorder = df_madre_reducido.set_index('identificationPatient')['idOrder'].to_dict()
         
-        # Reemplazar la columna original
-        df_fusionado['Nrodcto'] = df_fusionado['Nrodcto_final']
+        # Ahora editamos directamente el DataFrame de ofimatic
+        # Crear una nueva columna con el idOrder mapeado
+        df_ofimatic['idOrder_mapeado'] = df_ofimatic['nit'].map(mapeo_nit_idorder).fillna('')
+        df_ofimatic['idOrder_mapeado'] = df_ofimatic['idOrder_mapeado'].astype(str)
         
-        # Eliminar las columnas que ya no son necesarias
-        columnas_a_eliminar = ['identificationPatient', 'idOrder', 'Nrodcto_final']
-        df_fusionado = df_fusionado.drop(columns=[col for col in columnas_a_eliminar if col in df_fusionado.columns])
+        # Limpiar idOrder_mapeado para evitar decimales
+        df_ofimatic['idOrder_mapeado'] = df_ofimatic['idOrder_mapeado'].apply(
+            lambda x: str(int(float(x))) if x and x.replace('.','',1).isdigit() else x
+        )
+        
+        # Actualizar la columna Nrodcto DIRECTAMENTE en el DataFrame original
+        df_ofimatic['Nrodcto'] = df_ofimatic['Nrodcto'].astype(str) + '-' + df_ofimatic['idOrder_mapeado']
+        
+        # Eliminar la columna temporal
+        df_ofimatic = df_ofimatic.drop(columns=['idOrder_mapeado'])
+        
+        # El DataFrame df_ofimatic ahora tiene toda la información actualizada
+        # pero conserva EXACTAMENTE el formato, orden y estructura original
 
         progress_label.config(text="Guardando archivo...")
         root.update()
         
-        # Guardar el resultado
-        df_fusionado.to_csv(ruta_guardado, index=False, sep=';')
+        # Detectar el formato original del archivo ofimatic para conservarlo
+        extension_original = os.path.splitext(ruta_ofimatic)[1].lower()
+        
+        if extension_original in ['.xlsx', '.xls']:
+            # Si el original era Excel, guardamos en Excel
+            nombre_salida = "relaciones_unidas.xlsx"
+            ruta_guardado = os.path.join(carpeta_destino, nombre_salida)
+            
+            # Guardar preservando el formato Excel original
+            with pd.ExcelWriter(ruta_guardado, engine='openpyxl') as writer:
+                df_ofimatic.to_excel(writer, sheet_name='Sheet1', index=False)
+                
+                # Aplicar filtros automáticos (igual que el original)
+                workbook = writer.book
+                worksheet = writer.sheets['Sheet1']
+                worksheet.auto_filter.ref = f"A1:{chr(65 + len(df_ofimatic.columns) - 1)}{len(df_ofimatic) + 1}"
+                
+                # Ajustar ancho de columnas
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 50)
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
+        else:
+            # Si el original era CSV, guardamos en CSV
+            nombre_salida = "relaciones_unidas.csv"
+            ruta_guardado = os.path.join(carpeta_destino, nombre_salida)
+            df_ofimatic.to_csv(ruta_guardado, index=False, sep=';')
         
         progress_label.config(text="¡Proceso completado!")
         messagebox.showinfo("¡Éxito!", f"Proceso completado.\nEl archivo se guardó en:\n{ruta_guardado}")
@@ -295,7 +333,7 @@ INSTRUCCIONES:
 4. Haz clic en PROCESAR ARCHIVOS
 
 Formatos soportados: .csv, .xlsx, .xls
-El archivo resultado se guardará como 'relaciones_unidas.csv'
+El archivo resultado conservará el formato original (CSV o Excel)
 """
 
 instrucciones = ttk.Label(frame_principal, text=instrucciones_text, justify=tk.LEFT, foreground="gray")
