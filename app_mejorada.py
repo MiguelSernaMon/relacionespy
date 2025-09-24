@@ -2,6 +2,58 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import pandas as pd
 import os
+import openpyxl
+
+def leer_excel_inteligente(ruta_archivo):
+    """
+    Lee un archivo Excel detectando automáticamente dónde comienzan los datos reales
+    """
+    # Primero intentar leer normalmente
+    try:
+        df = pd.read_excel(ruta_archivo)
+        # Verificar si tiene columnas conocidas
+        columnas_madre = ['idOrder', 'authorizationNumber', 'typeOrder', 'identificationPatient']
+        columnas_ofimatic = ['nit', 'Nrodcto']
+        
+        if any(col in df.columns for col in columnas_madre + columnas_ofimatic):
+            return df
+    except:
+        pass
+    
+    # Si falla, buscar los encabezados usando openpyxl
+    wb = openpyxl.load_workbook(ruta_archivo, data_only=True)
+    ws = wb.active
+    
+    # Buscar la fila que contiene los encabezados
+    fila_encabezados = None
+    columnas_objetivo = ['idOrder', 'authorizationNumber', 'identificationPatient', 'nit', 'Nrodcto']
+    
+    for fila in range(1, min(20, ws.max_row + 1)):  # Buscar en las primeras 20 filas
+        valores_fila = []
+        for columna in range(1, min(50, ws.max_column + 1)):  # Buscar en las primeras 50 columnas
+            celda = ws.cell(row=fila, column=columna)
+            if celda.value:
+                valores_fila.append(str(celda.value).strip())
+        
+        # Verificar si esta fila contiene al menos 1 de las columnas objetivo
+        coincidencias = sum(1 for col in columnas_objetivo if col in valores_fila)
+        if coincidencias >= 1:
+            fila_encabezados = fila - 1  # -1 porque skiprows cuenta desde 0
+            break
+    
+    wb.close()
+    
+    # Leer el archivo con skiprows si encontramos los encabezados
+    if fila_encabezados is not None and fila_encabezados > 0:
+        df = pd.read_excel(ruta_archivo, skiprows=fila_encabezados)
+    else:
+        # Si no encontramos encabezados, intentar con skiprows común
+        try:
+            df = pd.read_excel(ruta_archivo, skiprows=4)
+        except:
+            df = pd.read_excel(ruta_archivo)
+    
+    return df
 
 def leer_archivo_ofimatic(ruta_archivo):
     """
@@ -38,26 +90,16 @@ def leer_archivo_ofimatic(ruta_archivo):
                     continue
                     
         elif extension in ['.xlsx', '.xls']:
-            # Para Excel, buscar la fila con los headers correctos
-            for skip_rows in range(10):
-                try:
-                    df_test = pd.read_excel(ruta_archivo, skiprows=skip_rows)
-                    if 'nit' in df_test.columns and 'Nrodcto' in df_test.columns:
-                        print(f"✅ Headers encontrados en fila {skip_rows + 1}")
-                        return df_test
-                except:
-                    continue
+            # Usar la función inteligente para Excel
+            df = leer_excel_inteligente(ruta_archivo)
             
-            # Si no encuentra headers, intentar sin headers y asignar nombres manualmente
-            try:
-                df = pd.read_excel(ruta_archivo, skiprows=4, header=None)
-                print("⚠️ Headers no encontrados, intentando detectar columnas automáticamente...")
+            # Verificar que tenga las columnas necesarias para ofimatic
+            if 'nit' not in df.columns or 'Nrodcto' not in df.columns:
+                print("⚠️ Columnas 'nit' y 'Nrodcto' no encontradas, intentando detectar automáticamente...")
                 
-                # Buscar las columnas que parecen ser 'nit' y 'Nrodcto'
-                # Normalmente 'nit' son números y 'Nrodcto' son códigos alfanuméricos
+                # Si no tiene las columnas correctas, intentar detectar automáticamente
                 for col_idx in range(min(15, len(df.columns))):
-                    # Verificar si la columna parece ser un NIT (números)
-                    sample_data = df[col_idx].dropna().astype(str)
+                    sample_data = df.iloc[:, col_idx].dropna().astype(str)
                     if len(sample_data) > 0:
                         # Si la mayoría de valores son numéricos, podría ser NIT
                         numeric_count = sum(1 for x in sample_data if x.isdigit())
@@ -65,25 +107,19 @@ def leer_archivo_ofimatic(ruta_archivo):
                             # Buscar una columna cercana que pueda ser Nrodcto
                             for nrodcto_idx in range(max(0, col_idx-3), min(len(df.columns), col_idx+4)):
                                 if nrodcto_idx != col_idx:
-                                    sample_nrodcto = df[nrodcto_idx].dropna().astype(str)
+                                    sample_nrodcto = df.iloc[:, nrodcto_idx].dropna().astype(str)
                                     if len(sample_nrodcto) > 0:
-                                        # Si tiene datos alfanuméricos, podría ser Nrodcto
-                                        alpha_count = sum(1 for x in sample_nrodcto if any(c.isalpha() for c in str(x)))
-                                        if alpha_count > 0 or len(set(sample_nrodcto)) > 1:
-                                            print(f"🔍 Detectadas columnas posibles: nit={col_idx}, Nrodcto={nrodcto_idx}")
-                                            # Crear un DataFrame con nombres correctos
-                                            df_result = df.copy()
-                                            df_result = df_result.rename(columns={col_idx: 'nit', nrodcto_idx: 'Nrodcto'})
-                                            return df_result
+                                        # Renombrar las columnas
+                                        columnas_nuevas = df.columns.tolist()
+                                        columnas_nuevas[col_idx] = 'nit'
+                                        columnas_nuevas[nrodcto_idx] = 'Nrodcto'
+                                        df.columns = columnas_nuevas
+                                        print(f"🔍 Detectadas columnas: nit=columna_{col_idx}, Nrodcto=columna_{nrodcto_idx}")
+                                        return df
                 
-                # Si no se puede detectar automáticamente, mostrar las primeras filas para ayuda
-                print("❌ No se pudieron detectar las columnas automáticamente")
-                print("Primeras 3 filas del archivo:")
-                print(df.head(3))
-                raise ValueError("No se pueden identificar las columnas 'nit' y 'Nrodcto' automáticamente")
-                
-            except Exception as e:
-                raise Exception(f"Error al leer archivo Excel ofimatic: {str(e)}")
+                raise ValueError("No se pueden identificar las columnas 'nit' y 'Nrodcto'")
+            
+            return df
         
         raise Exception("No se pudo leer el archivo ofimatic")
         
@@ -133,8 +169,8 @@ def leer_archivo(ruta_archivo):
                 raise Exception("No se pudo leer el archivo CSV con ninguna codificación")
             
         elif extension in ['.xlsx', '.xls']:
-            # Leer archivo Excel
-            df = pd.read_excel(ruta_archivo)
+            # Leer archivo Excel con función inteligente
+            df = leer_excel_inteligente(ruta_archivo)
             return df
         else:
             raise ValueError(f"Formato de archivo no soportado: {extension}")

@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import pandas as pd
 import os
+import openpyxl
 
 def leer_archivo(ruta_archivo):
     """
@@ -23,14 +24,65 @@ def leer_archivo(ruta_archivo):
             return df
             
         elif extension in ['.xlsx', '.xls']:
-            # Leer archivo Excel
-            df = pd.read_excel(ruta_archivo)
+            # Leer archivo Excel con detección automática de encabezados
+            df = leer_excel_inteligente(ruta_archivo)
             return df
         else:
             raise ValueError(f"Formato de archivo no soportado: {extension}")
             
     except Exception as e:
         raise Exception(f"Error al leer el archivo {ruta_archivo}: {str(e)}")
+
+def leer_excel_inteligente(ruta_archivo):
+    """
+    Lee un archivo Excel detectando automáticamente dónde comienzan los datos reales
+    """
+    import openpyxl
+    
+    # Primero intentar leer normalmente
+    try:
+        df = pd.read_excel(ruta_archivo)
+        # Verificar si tiene columnas conocidas
+        columnas_esperadas = ['idOrder', 'authorizationNumber', 'typeOrder', 'identificationPatient', 'nit']
+        if any(col in df.columns for col in columnas_esperadas):
+            return df
+    except:
+        pass
+    
+    # Si falla o no tiene las columnas esperadas, buscar los encabezados
+    wb = openpyxl.load_workbook(ruta_archivo, data_only=True)
+    ws = wb.active
+    
+    # Buscar la fila que contiene los encabezados
+    fila_encabezados = None
+    columnas_objetivo = ['idOrder', 'authorizationNumber', 'typeOrder', 'identificationPatient', 'nit']
+    
+    for fila in range(1, min(20, ws.max_row + 1)):  # Buscar en las primeras 20 filas
+        valores_fila = []
+        for columna in range(1, min(50, ws.max_column + 1)):  # Buscar en las primeras 50 columnas
+            celda = ws.cell(row=fila, column=columna)
+            if celda.value:
+                valores_fila.append(str(celda.value).strip())
+        
+        # Verificar si esta fila contiene al menos 2 de las columnas objetivo
+        coincidencias = sum(1 for col in columnas_objetivo if col in valores_fila)
+        if coincidencias >= 2:
+            fila_encabezados = fila - 1  # -1 porque skiprows cuenta desde 0
+            break
+    
+    wb.close()
+    
+    # Leer el archivo con skiprows si encontramos los encabezados
+    if fila_encabezados is not None and fila_encabezados > 0:
+        df = pd.read_excel(ruta_archivo, skiprows=fila_encabezados)
+    else:
+        # Si no encontramos encabezados, intentar con skiprows común
+        try:
+            df = pd.read_excel(ruta_archivo, skiprows=4)
+        except:
+            df = pd.read_excel(ruta_archivo)
+    
+    return df
 
 def seleccionar_archivo_1():
     archivo = filedialog.askopenfilename(
@@ -87,16 +139,8 @@ def procesar_archivos():
         # Cargar los archivos usando la nueva función
         df_madre = leer_archivo(ruta_madre)
         
-        # Para el archivo ofimatic, intentar saltando filas si es necesario
-        try:
-            df_ofimatic = leer_archivo(ruta_ofimatic)
-        except:
-            # Si falla, intentar saltando las primeras 4 filas (formato ofimatic)
-            extension = os.path.splitext(ruta_ofimatic)[1].lower()
-            if extension == '.csv':
-                df_ofimatic = pd.read_csv(ruta_ofimatic, skiprows=4, delimiter=';')
-            elif extension in ['.xlsx', '.xls']:
-                df_ofimatic = pd.read_excel(ruta_ofimatic, skiprows=4)
+        # Leer archivo ofimatic con detección inteligente
+        df_ofimatic = leer_archivo(ruta_ofimatic)
         
         progress_label.config(text="Procesando datos...")
         root.update()
