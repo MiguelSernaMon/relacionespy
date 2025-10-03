@@ -184,6 +184,174 @@ def leer_archivo_desde_contenido(contenido, nombre_archivo, es_ofimatic=False):
     except Exception as e:
         raise Exception(f"Error al leer el archivo {nombre_archivo}: {str(e)}")
 
+
+def leer_planilla_inicial_bogota(contenido):
+    """
+    Lee la planilla inicial de Bogotá manteniendo el formato original.
+    La planilla tiene 3 filas de encabezado antes de los datos.
+    """
+    # Leer todo el archivo sin procesar
+    df_completo = pd.read_excel(BytesIO(contenido), header=None)
+    
+    # Los encabezados están en la fila 3 (índice 3)
+    encabezados = df_completo.iloc[3].tolist()
+    
+    # Los datos comienzan desde la fila 4 (índice 4)
+    df_datos = pd.read_excel(BytesIO(contenido), skiprows=4)
+    df_datos.columns = encabezados
+    
+    # Guardar las primeras 4 filas para mantener el formato original
+    filas_encabezado = df_completo.iloc[0:4]
+    
+    return df_datos, filas_encabezado, encabezados
+
+
+def leer_planilla_pedidos_bogota(contenido):
+    """
+    Lee la planilla de pedidos con la estructura actual.
+    """
+    df = pd.read_excel(BytesIO(contenido))
+    
+    # Convertir IDENTIFICACION a string para facilitar la comparación
+    if 'IDENTIFICACION' in df.columns:
+        df['IDENTIFICACION'] = df['IDENTIFICACION'].astype(str).str.strip()
+    
+    return df
+
+
+def relacionar_por_nit_bogota(df_inicial, df_pedidos):
+    """
+    Relaciona las planillas por NIT o por DOCUMENTO ASOCIADO.
+    Actualiza el campo Nrodcto con el formato: Nrodcto-NUMERO_DE_PEDIDO
+    
+    Intenta dos métodos de relación:
+    1. Por NIT (nit == IDENTIFICACION)
+    2. Por documento (Nrodcto normalizado == DOCUMENTO ASOCIADO normalizado)
+    """
+    # Convertir nit a string para comparación
+    df_inicial['nit'] = df_inicial['nit'].astype(str).str.strip()
+    
+    def normalizar_documento(doc):
+        """Normaliza un documento quitando guiones y convirtiendo a mayúsculas"""
+        if pd.isna(doc):
+            return ''
+        doc_str = str(doc).strip().upper()
+        # Quitar guiones y espacios
+        doc_str = doc_str.replace('-', '').replace(' ', '')
+        return doc_str
+    
+    # Crear diccionarios de mapeo
+    # 1. Diccionario NIT -> NUMERO DE PEDIDO
+    pedidos_por_nit = {}
+    # 2. Diccionario DOCUMENTO NORMALIZADO -> NUMERO DE PEDIDO
+    pedidos_por_doc = {}
+    
+    for _, row in df_pedidos.iterrows():
+        # Convertir NUMERO DE PEDIDO a string sin decimales
+        num_pedido = row['NUMERO DE PEDIDO']
+        if pd.notna(num_pedido):
+            try:
+                num_pedido = str(int(float(num_pedido)))
+            except:
+                num_pedido = str(num_pedido).strip()
+        else:
+            num_pedido = ''
+        
+        # Mapeo por NIT
+        nit = str(row['IDENTIFICACION']).strip()
+        pedidos_por_nit[nit] = num_pedido
+        
+        # Mapeo por DOCUMENTO ASOCIADO
+        if 'DOCUMENTO ASOCIADO' in row and pd.notna(row['DOCUMENTO ASOCIADO']):
+            doc_normalizado = normalizar_documento(row['DOCUMENTO ASOCIADO'])
+            if doc_normalizado:
+                pedidos_por_doc[doc_normalizado] = num_pedido
+    
+    print(f"Total de NITs en pedidos: {len(pedidos_por_nit)}")
+    print(f"Total de DOCUMENTOS en pedidos: {len(pedidos_por_doc)}")
+    print(f"Total de registros en planilla inicial: {len(df_inicial)}")
+    
+    # Actualizar el campo Nrodcto
+    registros_actualizados_nit = 0
+    registros_actualizados_doc = 0
+    registros_no_encontrados = []
+    
+    for idx, row in df_inicial.iterrows():
+        nit = str(row['nit']).strip()
+        nrodcto_actual = str(row['Nrodcto'])
+        nrodcto_normalizado = normalizar_documento(nrodcto_actual)
+        
+        num_pedido = None
+        metodo = None
+        
+        # Método 1: Intentar por NIT
+        if nit in pedidos_por_nit and pedidos_por_nit[nit]:
+            num_pedido = pedidos_por_nit[nit]
+            metodo = 'NIT'
+            registros_actualizados_nit += 1
+        # Método 2: Si no encontró por NIT, intentar por DOCUMENTO
+        elif nrodcto_normalizado in pedidos_por_doc and pedidos_por_doc[nrodcto_normalizado]:
+            num_pedido = pedidos_por_doc[nrodcto_normalizado]
+            metodo = 'DOCUMENTO'
+            registros_actualizados_doc += 1
+        
+        # Si encontró el pedido por algún método, actualizar
+        if num_pedido and metodo:
+            # Crear el nuevo formato: Nrodcto-NUMERO_DE_PEDIDO
+            nuevo_nrodcto = f"{nrodcto_actual}-{num_pedido}"
+            df_inicial.at[idx, 'Nrodcto'] = nuevo_nrodcto
+        else:
+            registros_no_encontrados.append(f"{nit}|{nrodcto_actual}")
+    
+    total_actualizados = registros_actualizados_nit + registros_actualizados_doc
+    print(f"\nRegistros actualizados por NIT: {registros_actualizados_nit}")
+    print(f"Registros actualizados por DOCUMENTO: {registros_actualizados_doc}")
+    print(f"Total actualizados: {total_actualizados}")
+    print(f"Registros sin coincidencia: {len(registros_no_encontrados)}")
+    
+    if registros_no_encontrados and len(registros_no_encontrados) <= 5:
+        print(f"Ejemplos de registros no encontrados: {registros_no_encontrados[:5]}")
+    
+    return df_inicial
+
+
+def guardar_con_formato_bogota(df_datos, filas_encabezado):
+    """
+    Guarda el DataFrame manteniendo el formato original de la planilla inicial.
+    Retorna el BytesIO con el Excel generado.
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, PatternFill
+    from openpyxl.utils.dataframe import dataframe_to_rows
+    
+    # Crear un nuevo workbook
+    wb = Workbook()
+    ws = wb.active
+    
+    # Escribir las primeras 4 filas de encabezado originales
+    for r_idx, row in enumerate(filas_encabezado.values, start=1):
+        for c_idx, value in enumerate(row, start=1):
+            cell = ws.cell(row=r_idx, column=c_idx, value=value)
+            if r_idx == 1:  # Título
+                cell.font = Font(bold=True, size=12)
+            elif r_idx == 4:  # Encabezados de columnas
+                cell.fill = PatternFill(start_color="CCCCCC", end_color="CCCCCC", fill_type="solid")
+                cell.font = Font(bold=True)
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+    
+    # Escribir los datos actualizados a partir de la fila 5
+    for r_idx, row in enumerate(dataframe_to_rows(df_datos, index=False, header=False), start=5):
+        for c_idx, value in enumerate(row, start=1):
+            ws.cell(row=r_idx, column=c_idx, value=value)
+    
+    # Guardar en BytesIO
+    excel_buffer = BytesIO()
+    wb.save(excel_buffer)
+    excel_buffer.seek(0)
+    
+    return excel_buffer
+
+
 class MailboxHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=os.path.dirname(__file__), **kwargs)
@@ -429,8 +597,16 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             <p>Combina automáticamente planillas CSV de manera fácil y rápida</p>
         </div>
         
-        <div class="info-box">
-            <h3>📋 Formato de archivos soportados:</h3>
+        <div style="margin-bottom: 20px;">
+            <label class="file-label" for="modoSelector">🔧 Selecciona el modo de operación:</label>
+            <select id="modoSelector" class="file-input" style="padding: 12px;">
+                <option value="normal">Modo Normal (Madre + Ofimatic)</option>
+                <option value="bogota">Modo Bogotá (Relacionar por NIT)</option>
+            </select>
+        </div>
+        
+        <div class="info-box" id="infoNormal">
+            <h3>📋 Formato de archivos soportados (Modo Normal):</h3>
             <ul>
                 <li><strong>Formatos:</strong> CSV (.csv), Excel (.xlsx, .xls)</li>
                 <li><strong>Planilla Madre:</strong> Debe tener columnas identificationPatient e idOrder</li>
@@ -440,15 +616,25 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             </ul>
         </div>
         
+        <div class="info-box" id="infoBogota" style="display: none;">
+            <h3>📋 Formato de archivos soportados (Modo Bogotá):</h3>
+            <ul>
+                <li><strong>Planilla Inicial Bogotá:</strong> Archivo Excel con formato base</li>
+                <li><strong>Planilla de Pedidos:</strong> Excel con columnas IDENTIFICACION y NUMERO DE PEDIDO</li>
+                <li><strong>Proceso:</strong> Relaciona por NIT y actualiza Nrodcto a formato: Nrodcto-NUMERO_PEDIDO</li>
+                <li><strong>Resultado:</strong> Excel con el mismo formato de Planilla Inicial Bogotá</li>
+            </ul>
+        </div>
+        
         <form id="fileForm">
             <div class="file-section" id="madreSection">
-                <label class="file-label" for="madreFile">1️⃣ Planilla Madre (.csv/.xlsx/.xls)</label>
+                <label class="file-label" for="madreFile" id="madreLabel">1️⃣ Planilla Madre (.csv/.xlsx/.xls)</label>
                 <input type="file" id="madreFile" class="file-input" accept=".csv,.xlsx,.xls" required>
                 <div id="madreStatus" class="file-status" style="display: none;"></div>
             </div>
             
             <div class="file-section" id="ofimaticSection">
-                <label class="file-label" for="ofimaticFile">2️⃣ Planilla Ofimatic (.csv/.xlsx/.xls)</label>
+                <label class="file-label" for="ofimaticFile" id="ofimaticLabel">2️⃣ Planilla Ofimatic (.csv/.xlsx/.xls)</label>
                 <input type="file" id="ofimaticFile" class="file-input" accept=".csv,.xlsx,.xls" required>
                 <div id="ofimaticStatus" class="file-status" style="display: none;"></div>
             </div>
@@ -469,12 +655,43 @@ class MailboxHandler(SimpleHTTPRequestHandler):
     </div>
 
     <script>
+        const modoSelector = document.getElementById('modoSelector');
         const madreFile = document.getElementById('madreFile');
         const ofimaticFile = document.getElementById('ofimaticFile');
+        const madreLabel = document.getElementById('madreLabel');
+        const ofimaticLabel = document.getElementById('ofimaticLabel');
         const processBtn = document.getElementById('processBtn');
         const form = document.getElementById('fileForm');
         const loading = document.getElementById('loading');
         const result = document.getElementById('result');
+        const infoNormal = document.getElementById('infoNormal');
+        const infoBogota = document.getElementById('infoBogota');
+        
+        // Cambiar etiquetas y descripciones según el modo
+        modoSelector.addEventListener('change', () => {
+            const modo = modoSelector.value;
+            if (modo === 'bogota') {
+                madreLabel.textContent = '1️⃣ Planilla Inicial Bogotá (.xlsx)';
+                ofimaticLabel.textContent = '2️⃣ Planilla de Pedidos (.xlsx)';
+                infoNormal.style.display = 'none';
+                infoBogota.style.display = 'block';
+                processBtn.textContent = '3️⃣ ¡RELACIONAR PLANILLAS BOGOTÁ!';
+            } else {
+                madreLabel.textContent = '1️⃣ Planilla Madre (.csv/.xlsx/.xls)';
+                ofimaticLabel.textContent = '2️⃣ Planilla Ofimatic (.csv/.xlsx/.xls)';
+                infoNormal.style.display = 'block';
+                infoBogota.style.display = 'none';
+                processBtn.textContent = '3️⃣ ¡GENERAR ARCHIVO COMBINADO!';
+            }
+            // Reset archivos
+            madreFile.value = '';
+            ofimaticFile.value = '';
+            document.getElementById('madreStatus').style.display = 'none';
+            document.getElementById('ofimaticStatus').style.display = 'none';
+            document.getElementById('madreSection').classList.remove('has-file');
+            document.getElementById('ofimaticSection').classList.remove('has-file');
+            checkFormReady();
+        });
         
         function updateFileStatus(fileInput, statusDiv, sectionDiv) {
             const file = fileInput.files[0];
@@ -521,6 +738,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 const formData = new FormData();
                 formData.append('madre', madreFile.files[0]);
                 formData.append('ofimatic', ofimaticFile.files[0]);
+                formData.append('modo', modoSelector.value);
                 
                 const response = await fetch('/process', {
                     method: 'POST',
@@ -606,9 +824,10 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             
             files = {}
             filenames = {}
+            modo = 'normal'  # modo por defecto
+            
             for part in parts:
-                if b'Content-Disposition' in part and b'filename=' in part:
-                    # Extraer nombre del campo y contenido del archivo
+                if b'Content-Disposition' in part:
                     header_end = part.find(b'\r\n\r\n')
                     if header_end != -1:
                         header = part[:header_end].decode('utf-8')
@@ -618,19 +837,23 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                         if content.endswith(b'\r\n'):
                             content = content[:-2]
                         
-                        # Extraer el nombre del archivo
-                        filename = ''
-                        if 'filename="' in header:
-                            start = header.find('filename="') + 10
-                            end = header.find('"', start)
-                            filename = header[start:end]
-                        
-                        if 'name="madre"' in header:
-                            files['madre'] = content
-                            filenames['madre'] = filename
-                        elif 'name="ofimatic"' in header:
-                            files['ofimatic'] = content
-                            filenames['ofimatic'] = filename
+                        # Extraer el nombre del archivo si existe
+                        if b'filename=' in part:
+                            filename = ''
+                            if 'filename="' in header:
+                                start = header.find('filename="') + 10
+                                end = header.find('"', start)
+                                filename = header[start:end]
+                            
+                            if 'name="madre"' in header:
+                                files['madre'] = content
+                                filenames['madre'] = filename
+                            elif 'name="ofimatic"' in header:
+                                files['ofimatic'] = content
+                                filenames['ofimatic'] = filename
+                        elif 'name="modo"' in header:
+                            # Extraer el valor del modo
+                            modo = content.decode('utf-8').strip()
             
             if 'madre' not in files or 'ofimatic' not in files:
                 self.send_json_response({
@@ -640,11 +863,17 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 })
                 return
             
-            # Procesar los archivos
-            result = self.process_data_files(
-                files['madre'], filenames['madre'],
-                files['ofimatic'], filenames['ofimatic']
-            )
+            # Procesar los archivos según el modo
+            if modo == 'bogota':
+                result = self.process_bogota_files(
+                    files['madre'], filenames['madre'],
+                    files['ofimatic'], filenames['ofimatic']
+                )
+            else:
+                result = self.process_data_files(
+                    files['madre'], filenames['madre'],
+                    files['ofimatic'], filenames['ofimatic']
+                )
             self.send_json_response(result)
             
         except Exception as e:
@@ -797,6 +1026,68 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 'success': False,
                 'error': f'Error al procesar: {str(e)}',
                 'details': 'Verifica que los archivos tengan el formato correcto (CSV, XLS, XLSX)'
+            }
+    
+    def process_bogota_files(self, inicial_content, inicial_filename, pedidos_content, pedidos_filename):
+        """
+        Procesa archivos para el modo Bogotá: relaciona por NIT y actualiza Nrodcto
+        """
+        try:
+            print(f"🔄 [BOGOTÁ] Procesando archivos: {inicial_filename} y {pedidos_filename}")
+            
+            # Leer planilla inicial de Bogotá
+            df_inicial, filas_encabezado, encabezados = leer_planilla_inicial_bogota(inicial_content)
+            print(f"✅ Planilla inicial leída: {len(df_inicial)} filas")
+            
+            # Leer planilla de pedidos
+            df_pedidos = leer_planilla_pedidos_bogota(pedidos_content)
+            print(f"✅ Planilla de pedidos leída: {len(df_pedidos)} filas")
+            
+            # Verificar columnas requeridas
+            if 'nit' not in df_inicial.columns or 'Nrodcto' not in df_inicial.columns:
+                return {
+                    'success': False,
+                    'error': 'Planilla Inicial no tiene las columnas necesarias (nit, Nrodcto)',
+                    'details': f'Columnas disponibles: {list(df_inicial.columns)}'
+                }
+            
+            if 'IDENTIFICACION' not in df_pedidos.columns or 'NUMERO DE PEDIDO' not in df_pedidos.columns:
+                return {
+                    'success': False,
+                    'error': 'Planilla de Pedidos no tiene las columnas necesarias (IDENTIFICACION, NUMERO DE PEDIDO)',
+                    'details': f'Columnas disponibles: {list(df_pedidos.columns)}'
+                }
+            
+            # Relacionar por NIT
+            print("🔗 Relacionando datos por NIT...")
+            df_actualizado = relacionar_por_nit_bogota(df_inicial, df_pedidos)
+            
+            # Guardar con formato original
+            print("💾 Generando archivo Excel con formato original...")
+            excel_buffer = guardar_con_formato_bogota(df_actualizado, filas_encabezado)
+            
+            excel_data = base64.b64encode(excel_buffer.read()).decode('utf-8')
+            
+            print(f"✅ Proceso completado: {len(df_actualizado)} registros en el resultado")
+            
+            from datetime import datetime
+            fecha_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            return {
+                'success': True,
+                'message': f'Archivo procesado exitosamente. {len(df_actualizado)} registros procesados.',
+                'excel_data': excel_data,
+                'filename': f'Planilla_Relacionada_Bogota_{fecha_actual}.xlsx'
+            }
+            
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'error': f'Error al procesar archivos de Bogotá: {str(e)}',
+                'details': 'Verifica que los archivos sean Excel (.xlsx) y tengan las columnas correctas'
             }
     
     def send_json_response(self, data):
