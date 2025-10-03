@@ -602,6 +602,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             <select id="modoSelector" class="file-input" style="padding: 12px;">
                 <option value="normal">Modo Normal (Madre + Ofimatic)</option>
                 <option value="bogota">Modo Bogotá (Relacionar por NIT)</option>
+                <option value="filtrar_bogota">Filtrar Bogotá (Solo B-BOGOTA)</option>
             </select>
         </div>
         
@@ -623,6 +624,16 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 <li><strong>Planilla de Pedidos:</strong> Excel con columnas IDENTIFICACION y NUMERO DE PEDIDO</li>
                 <li><strong>Proceso:</strong> Relaciona por NIT y actualiza Nrodcto a formato: Nrodcto-NUMERO_PEDIDO</li>
                 <li><strong>Resultado:</strong> Excel con el mismo formato de Planilla Inicial Bogotá</li>
+            </ul>
+        </div>
+        
+        <div class="info-box" id="infoFiltrarBogota" style="display: none;">
+            <h3>📋 Filtrar pedidos de Bogotá (Solo B-BOGOTA):</h3>
+            <ul>
+                <li><strong>Archivo:</strong> PLANILLAS OFMATIC BOGOTA.xlsx (o similar)</li>
+                <li><strong>Proceso:</strong> Filtra solo los pedidos con Destino = "B-BOGOTA"</li>
+                <li><strong>Resultado:</strong> Excel filtrado con el mismo formato original</li>
+                <li><strong>Nota:</strong> Solo necesitas seleccionar UN archivo</li>
             </ul>
         </div>
         
@@ -666,6 +677,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         const result = document.getElementById('result');
         const infoNormal = document.getElementById('infoNormal');
         const infoBogota = document.getElementById('infoBogota');
+        const infoFiltrarBogota = document.getElementById('infoFiltrarBogota');
         
         // Cambiar etiquetas y descripciones según el modo
         modoSelector.addEventListener('change', () => {
@@ -673,15 +685,35 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             if (modo === 'bogota') {
                 madreLabel.textContent = '1️⃣ Planilla Inicial Bogotá (.xlsx)';
                 ofimaticLabel.textContent = '2️⃣ Planilla de Pedidos (.xlsx)';
+                document.getElementById('madreSection').style.display = 'block';
+                document.getElementById('ofimaticSection').style.display = 'block';
                 infoNormal.style.display = 'none';
                 infoBogota.style.display = 'block';
+                infoFiltrarBogota.style.display = 'none';
                 processBtn.textContent = '3️⃣ ¡RELACIONAR PLANILLAS BOGOTÁ!';
+                madreFile.required = true;
+                ofimaticFile.required = true;
+            } else if (modo === 'filtrar_bogota') {
+                madreLabel.textContent = '1️⃣ Planilla Ofimatic Bogotá (.xlsx)';
+                document.getElementById('madreSection').style.display = 'block';
+                document.getElementById('ofimaticSection').style.display = 'none';
+                infoNormal.style.display = 'none';
+                infoBogota.style.display = 'none';
+                infoFiltrarBogota.style.display = 'block';
+                processBtn.textContent = '2️⃣ ¡FILTRAR PEDIDOS BOGOTÁ!';
+                madreFile.required = true;
+                ofimaticFile.required = false;
             } else {
                 madreLabel.textContent = '1️⃣ Planilla Madre (.csv/.xlsx/.xls)';
                 ofimaticLabel.textContent = '2️⃣ Planilla Ofimatic (.csv/.xlsx/.xls)';
+                document.getElementById('madreSection').style.display = 'block';
+                document.getElementById('ofimaticSection').style.display = 'block';
                 infoNormal.style.display = 'block';
                 infoBogota.style.display = 'none';
+                infoFiltrarBogota.style.display = 'none';
                 processBtn.textContent = '3️⃣ ¡GENERAR ARCHIVO COMBINADO!';
+                madreFile.required = true;
+                ofimaticFile.required = true;
             }
             // Reset archivos
             madreFile.value = '';
@@ -692,6 +724,9 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             document.getElementById('ofimaticSection').classList.remove('has-file');
             checkFormReady();
         });
+        
+        // Escuchar cambios en el modo también
+        modoSelector.addEventListener('change', checkFormReady);
         
         function updateFileStatus(fileInput, statusDiv, sectionDiv) {
             const file = fileInput.files[0];
@@ -708,9 +743,15 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         }
         
         function checkFormReady() {
+            const modo = modoSelector.value;
             const madreReady = madreFile.files.length > 0;
             const ofimaticReady = ofimaticFile.files.length > 0;
-            processBtn.disabled = !(madreReady && ofimaticReady);
+            
+            if (modo === 'filtrar_bogota') {
+                processBtn.disabled = !madreReady;
+            } else {
+                processBtn.disabled = !(madreReady && ofimaticReady);
+            }
         }
         
         madreFile.addEventListener('change', () => {
@@ -724,9 +765,19 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            if (!madreFile.files[0] || !ofimaticFile.files[0]) {
-                alert('Por favor, selecciona ambos archivos antes de continuar.');
-                return;
+            const modo = modoSelector.value;
+            
+            // Validar según el modo
+            if (modo === 'filtrar_bogota') {
+                if (!madreFile.files[0]) {
+                    alert('Por favor, selecciona el archivo de planilla Ofimatic Bogotá.');
+                    return;
+                }
+            } else {
+                if (!madreFile.files[0] || !ofimaticFile.files[0]) {
+                    alert('Por favor, selecciona ambos archivos antes de continuar.');
+                    return;
+                }
             }
             
             // Mostrar loading
@@ -737,8 +788,10 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             try {
                 const formData = new FormData();
                 formData.append('madre', madreFile.files[0]);
-                formData.append('ofimatic', ofimaticFile.files[0]);
-                formData.append('modo', modoSelector.value);
+                if (modo !== 'filtrar_bogota' && ofimaticFile.files[0]) {
+                    formData.append('ofimatic', ofimaticFile.files[0]);
+                }
+                formData.append('modo', modo);
                 
                 const response = await fetch('/process', {
                     method: 'POST',
@@ -855,21 +908,39 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                             # Extraer el valor del modo
                             modo = content.decode('utf-8').strip()
             
-            if 'madre' not in files or 'ofimatic' not in files:
+            if 'madre' not in files:
                 self.send_json_response({
                     'success': False, 
-                    'error': 'No se pudieron leer los archivos',
-                    'details': 'Asegúrate de que ambos archivos están seleccionados'
+                    'error': 'No se pudo leer el archivo',
+                    'details': 'Asegúrate de que el archivo está seleccionado'
                 })
                 return
             
             # Procesar los archivos según el modo
-            if modo == 'bogota':
+            if modo == 'filtrar_bogota':
+                result = self.process_filtrar_bogota(
+                    files['madre'], filenames['madre']
+                )
+            elif modo == 'bogota':
+                if 'ofimatic' not in files:
+                    self.send_json_response({
+                        'success': False, 
+                        'error': 'No se pudieron leer los archivos',
+                        'details': 'Asegúrate de que ambos archivos están seleccionados'
+                    })
+                    return
                 result = self.process_bogota_files(
                     files['madre'], filenames['madre'],
                     files['ofimatic'], filenames['ofimatic']
                 )
             else:
+                if 'ofimatic' not in files:
+                    self.send_json_response({
+                        'success': False, 
+                        'error': 'No se pudieron leer los archivos',
+                        'details': 'Asegúrate de que ambos archivos están seleccionados'
+                    })
+                    return
                 result = self.process_data_files(
                     files['madre'], filenames['madre'],
                     files['ofimatic'], filenames['ofimatic']
@@ -1088,6 +1159,78 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 'success': False,
                 'error': f'Error al procesar archivos de Bogotá: {str(e)}',
                 'details': 'Verifica que los archivos sean Excel (.xlsx) y tengan las columnas correctas'
+            }
+    
+    def process_filtrar_bogota(self, archivo_content, archivo_filename):
+        """
+        Filtra la planilla Ofimatic Bogotá para dejar solo los pedidos con Destino = B-BOGOTA
+        """
+        try:
+            print(f"🔄 [FILTRAR BOGOTÁ] Procesando archivo: {archivo_filename}")
+            
+            # Leer el archivo completo sin procesar
+            df_completo = pd.read_excel(BytesIO(archivo_content), header=None)
+            
+            # Los encabezados están en la fila 3 (índice 3)
+            encabezados = df_completo.iloc[3].tolist()
+            
+            # Guardar las primeras 4 filas para mantener el formato original
+            filas_encabezado = df_completo.iloc[0:4]
+            
+            # Los datos comienzan desde la fila 4 (índice 4)
+            df_datos = pd.read_excel(BytesIO(archivo_content), skiprows=4)
+            df_datos.columns = encabezados
+            
+            print(f"✅ Planilla leída: {len(df_datos)} registros totales")
+            
+            # Filtrar solo los registros con Destino = B-BOGOTA o B-SOACHA
+            if 'Destino' not in df_datos.columns:
+                return {
+                    'success': False,
+                    'error': 'El archivo no tiene la columna "Destino"',
+                    'details': f'Columnas disponibles: {list(df_datos.columns)}'
+                }
+            
+            df_filtrado = df_datos[df_datos['Destino'].isin(['B-BOGOTA', 'B-SOACHA'])].copy()
+            
+            # Contar registros por destino
+            count_bogota = len(df_filtrado[df_filtrado['Destino'] == 'B-BOGOTA'])
+            count_soacha = len(df_filtrado[df_filtrado['Destino'] == 'B-SOACHA'])
+            print(f"✅ Registros filtrados: {len(df_filtrado)} ({count_bogota} B-BOGOTA, {count_soacha} B-SOACHA)")
+            
+            if len(df_filtrado) == 0:
+                return {
+                    'success': False,
+                    'error': 'No se encontraron registros con Destino = B-BOGOTA o B-SOACHA',
+                    'details': f'Total de registros en el archivo: {len(df_datos)}'
+                }
+            
+            # Guardar con formato original
+            print("💾 Generando archivo Excel con formato original...")
+            excel_buffer = guardar_con_formato_bogota(df_filtrado, filas_encabezado)
+            
+            excel_data = base64.b64encode(excel_buffer.read()).decode('utf-8')
+            
+            print(f"✅ Proceso completado: {len(df_filtrado)} registros en el resultado")
+            
+            from datetime import datetime
+            fecha_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            return {
+                'success': True,
+                'message': f'Archivo filtrado exitosamente. {len(df_filtrado)} registros ({count_bogota} B-BOGOTA, {count_soacha} B-SOACHA) de {len(df_datos)} totales.',
+                'excel_data': excel_data,
+                'filename': f'Planilla_Filtrada_BOGOTA_SOACHA_{fecha_actual}.xlsx'
+            }
+            
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'error': f'Error al filtrar archivo: {str(e)}',
+                'details': 'Verifica que el archivo sea Excel (.xlsx) y tenga la estructura correcta'
             }
     
     def send_json_response(self, data):
