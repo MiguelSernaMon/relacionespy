@@ -24,11 +24,12 @@ def leer_excel_inteligente_desde_contenido(contenido):
     # Primero intentar leer normalmente
     try:
         df = pd.read_excel(BytesIO(contenido))
-        # Verificar si tiene columnas conocidas (tanto para madre como para ofimatic)
+        # Verificar si tiene columnas conocidas (madre, ofimatic, o ehlpharma)
         columnas_madre = ['idOrder', 'authorizationNumber', 'typeOrder', 'identificationPatient']
         columnas_ofimatic = ['nit', 'Nrodcto']
+        columnas_ehlpharma = ['IDENTIFICACION', 'NUMERO DE PEDIDO', 'DIRECCION DE ENTREGA', 'CELULAR', 'DOCUMENTO ASOCIADO']
         
-        if any(col in df.columns for col in columnas_madre + columnas_ofimatic):
+        if any(col in df.columns for col in columnas_madre + columnas_ofimatic + columnas_ehlpharma):
             return df
     except:
         pass
@@ -39,7 +40,11 @@ def leer_excel_inteligente_desde_contenido(contenido):
     
     # Buscar la fila que contiene los encabezados
     fila_encabezados = None
-    columnas_objetivo = ['idOrder', 'authorizationNumber', 'identificationPatient', 'nit', 'Nrodcto']
+    columnas_objetivo = [
+        'idOrder', 'authorizationNumber', 'identificationPatient',  # Medellín
+        'nit', 'Nrodcto',  # Ofimatic
+        'IDENTIFICACION', 'NUMERO DE PEDIDO', 'DIRECCION DE ENTREGA', 'CELULAR', 'DOCUMENTO ASOCIADO'  # Ehlpharma
+    ]
     
     for fila in range(1, min(20, ws.max_row + 1)):  # Buscar en las primeras 20 filas
         valores_fila = []
@@ -52,6 +57,7 @@ def leer_excel_inteligente_desde_contenido(contenido):
         coincidencias = sum(1 for col in columnas_objetivo if col in valores_fila)
         if coincidencias >= 1:
             fila_encabezados = fila - 1  # -1 porque skiprows cuenta desde 0
+            print(f"✅ Encabezados encontrados en fila {fila}")
             break
     
     wb.close()
@@ -604,6 +610,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 <option value="bogota">Modo Bogotá (Relacionar por NIT)</option>
                 <option value="filtrar_bogota">Filtrar Bogotá (Solo B-BOGOTA y B-SOACHA)</option>
                 <option value="medellin_libro2">Medellín → Libro2 (Formato Ruteo)</option>
+                <option value="bogota_libro2">Bogotá → Libro2 (Formato Ruteo)</option>
             </select>
         </div>
         
@@ -649,6 +656,20 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             </ul>
         </div>
         
+        <div class="info-box" id="infoBogotaLibro2" style="display: none;">
+            <h3>📋 Bogotá → Libro2 (Formato Ruteo):</h3>
+            <ul>
+                <li><strong>Planilla Ehlpharma:</strong> Excel con datos de Bogotá (IDENTIFICACION, NUMERO DE PEDIDO, DIRECCION DE ENTREGA, CELULAR, CIUDAD DE ENTREGA)</li>
+                <li><strong>Planilla Ofimatic:</strong> PLANILLAS OFMATIC BOGOTA.xlsx (con nit, Nrodcto, NomMensajero, NOMBRE, DIRECCION, TEL1, TEL2, TipoVta, Destino)</li>
+                <li><strong>Proceso:</strong> Relaciona por NIT y transforma al formato Libro2.xlsx para ruteo en Cundinamarca</li>
+                <li><strong>Resultado:</strong> Excel con formato: Nombre Vehículo, Título de la Visita, Dirección, ID Referencia, Notas, Teléfono</li>
+                <li><strong>Destino:</strong> Extrae ciudad de formato "B-CIUDAD" → "CIUDAD" en mayúsculas</li>
+                <li><strong>Ciudad Entrega:</strong> Extrae de "Zipaquirá-Cundinamarca-Colombia" → "ZIPAQUIRA"</li>
+                <li><strong>Dirección:</strong> DIRECCION DE ENTREGA de ehlpharma + ", " + ciudad + ", Cundinamarca"</li>
+                <li><strong>Teléfono:</strong> CELULAR de ehlpharma, sino TEL1 o TEL2 de ofimatic</li>
+            </ul>
+        </div>
+        
         <form id="fileForm">
             <div class="file-section" id="madreSection">
                 <label class="file-label" for="madreFile" id="madreLabel">1️⃣ Planilla Madre (.csv/.xlsx/.xls)</label>
@@ -691,6 +712,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         const infoBogota = document.getElementById('infoBogota');
         const infoFiltrarBogota = document.getElementById('infoFiltrarBogota');
         const infoMedellinLibro2 = document.getElementById('infoMedellinLibro2');
+        const infoBogotaLibro2 = document.getElementById('infoBogotaLibro2');
         
         // Cambiar etiquetas y descripciones según el modo
         modoSelector.addEventListener('change', () => {
@@ -704,6 +726,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 infoBogota.style.display = 'block';
                 infoFiltrarBogota.style.display = 'none';
                 infoMedellinLibro2.style.display = 'none';
+                infoBogotaLibro2.style.display = 'none';
                 processBtn.textContent = '3️⃣ ¡RELACIONAR PLANILLAS BOGOTÁ!';
                 madreFile.required = true;
                 ofimaticFile.required = true;
@@ -715,6 +738,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 infoBogota.style.display = 'none';
                 infoFiltrarBogota.style.display = 'block';
                 infoMedellinLibro2.style.display = 'none';
+                infoBogotaLibro2.style.display = 'none';
                 processBtn.textContent = '2️⃣ ¡FILTRAR PEDIDOS BOGOTÁ!';
                 madreFile.required = true;
                 ofimaticFile.required = false;
@@ -727,7 +751,21 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 infoBogota.style.display = 'none';
                 infoFiltrarBogota.style.display = 'none';
                 infoMedellinLibro2.style.display = 'block';
+                infoBogotaLibro2.style.display = 'none';
                 processBtn.textContent = '3️⃣ ¡GENERAR ARCHIVO LIBRO2!';
+                madreFile.required = true;
+                ofimaticFile.required = true;
+            } else if (modo === 'bogota_libro2') {
+                madreLabel.textContent = '1️⃣ Planilla Ehlpharma Bogotá (.xlsx)';
+                ofimaticLabel.textContent = '2️⃣ Planilla Ofimatic Bogotá (.xlsx)';
+                document.getElementById('madreSection').style.display = 'block';
+                document.getElementById('ofimaticSection').style.display = 'block';
+                infoNormal.style.display = 'none';
+                infoBogota.style.display = 'none';
+                infoFiltrarBogota.style.display = 'none';
+                infoMedellinLibro2.style.display = 'none';
+                infoBogotaLibro2.style.display = 'block';
+                processBtn.textContent = '3️⃣ ¡GENERAR ARCHIVO LIBRO2 BOGOTÁ!';
                 madreFile.required = true;
                 ofimaticFile.required = true;
             } else {
@@ -739,6 +777,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 infoBogota.style.display = 'none';
                 infoFiltrarBogota.style.display = 'none';
                 infoMedellinLibro2.style.display = 'none';
+                infoBogotaLibro2.style.display = 'none';
                 processBtn.textContent = '3️⃣ ¡GENERAR ARCHIVO COMBINADO!';
                 madreFile.required = true;
                 ofimaticFile.required = true;
@@ -970,6 +1009,18 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                     })
                     return
                 result = self.process_medellin_libro2(
+                    files['madre'], filenames['madre'],
+                    files['ofimatic'], filenames['ofimatic']
+                )
+            elif modo == 'bogota_libro2':
+                if 'ofimatic' not in files:
+                    self.send_json_response({
+                        'success': False, 
+                        'error': 'No se pudieron leer los archivos',
+                        'details': 'Asegúrate de que ambos archivos están seleccionados'
+                    })
+                    return
+                result = self.process_bogota_libro2(
                     files['madre'], filenames['madre'],
                     files['ofimatic'], filenames['ofimatic']
                 )
@@ -1441,6 +1492,300 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 'details': 'Verifica que los archivos tengan las columnas correctas'
             }
     
+    def process_bogota_libro2(self, ehlpharma_content, ehlpharma_filename, ofimatic_content, ofimatic_filename):
+        """
+        Procesa archivos de Bogotá (ehlpharma + ofimatic) y los transforma al formato Libro2.xlsx
+        """
+        try:
+            print(f"🔄 [BOGOTÁ → LIBRO2] Procesando archivos: {ehlpharma_filename} y {ofimatic_filename}")
+            
+            # Leer planilla ehlpharma (similar a madre pero con columnas diferentes)
+            df_ehlpharma = leer_excel_inteligente_desde_contenido(ehlpharma_content)
+            print(f"✅ Planilla ehlpharma leída: {len(df_ehlpharma)} filas")
+            print(f"   Columnas disponibles: {list(df_ehlpharma.columns)}")
+            
+            # Leer planilla ofimatic (con estructura especial de 4 filas de encabezado)
+            df_ofimatic = pd.read_excel(BytesIO(ofimatic_content), header=3)
+            print(f"✅ Planilla ofimatic leída: {len(df_ofimatic)} filas")
+            print(f"   Columnas disponibles: {list(df_ofimatic.columns)}")
+            
+            # Verificar columnas requeridas en planilla ehlpharma
+            required_ehlpharma_cols = ['IDENTIFICACION', 'NUMERO DE PEDIDO', 'DOCUMENTO ASOCIADO']
+            optional_ehlpharma_cols = ['DIRECCION DE ENTREGA', 'CELULAR', 'CIUDAD DE ENTREGA']
+            missing_ehlpharma = [col for col in required_ehlpharma_cols if col not in df_ehlpharma.columns]
+            if missing_ehlpharma:
+                return {
+                    'success': False,
+                    'error': f'Columnas faltantes en planilla ehlpharma: {missing_ehlpharma}',
+                    'details': f'Columnas disponibles: {list(df_ehlpharma.columns)}'
+                }
+            
+            # Verificar columnas requeridas en planilla ofimatic
+            required_ofimatic_cols = ['nit', 'Nrodcto']
+            optional_ofimatic_cols = ['NomMensajero', 'NOMBRE', 'DIRECCION', 'TEL1', 'TEL2', 'TipoVta', 'Destino']
+            missing_ofimatic = [col for col in required_ofimatic_cols if col not in df_ofimatic.columns]
+            if missing_ofimatic:
+                return {
+                    'success': False,
+                    'error': f'Columnas faltantes en planilla ofimatic: {missing_ofimatic}',
+                    'details': f'Columnas disponibles: {list(df_ofimatic.columns)}'
+                }
+            
+            # Normalizar tipos de datos
+            df_ehlpharma['IDENTIFICACION'] = df_ehlpharma['IDENTIFICACION'].astype(str)
+            df_ehlpharma['DOCUMENTO ASOCIADO'] = df_ehlpharma['DOCUMENTO ASOCIADO'].apply(
+                lambda x: self._normalizar_documento_asociado(x)
+            )
+            df_ofimatic['nit'] = df_ofimatic['nit'].astype(str)
+            
+            # Normalizar Nrodcto en ofimatic para facilitar relación
+            df_ofimatic['Nrodcto_normalizado'] = df_ofimatic['Nrodcto'].apply(
+                lambda x: self._normalizar_documento_asociado(x)
+            )
+            
+            # Paso 1: Relacionar por NIT Y por DOCUMENTO ASOCIADO
+            print("🔗 Paso 1: Relacionando por NIT y DOCUMENTO ASOCIADO...")
+            
+            # Mapeo principal por NIT
+            mapeo_nit_idorder = df_ehlpharma.set_index('IDENTIFICACION')['NUMERO DE PEDIDO'].to_dict()
+            mapeo_nit_documento = df_ehlpharma.set_index('IDENTIFICACION')['DOCUMENTO ASOCIADO'].to_dict()
+            
+            # Mapeo secundario por DOCUMENTO ASOCIADO (para relacionar con Nrodcto)
+            mapeo_documento_idorder = df_ehlpharma.set_index('DOCUMENTO ASOCIADO')['NUMERO DE PEDIDO'].to_dict()
+            # Para obtener el documento asociado original, no necesitamos este mapeo ya que ya está normalizado
+            
+            # Crear diccionarios de mapeo desde ehlpharma
+            # Mapeos por NIT (IDENTIFICACION)
+            mapeo_address_nit = {}
+            mapeo_phone_nit = {}
+            mapeo_city_nit = {}
+            
+            # Mapeos por DOCUMENTO ASOCIADO
+            mapeo_address_doc = {}
+            mapeo_phone_doc = {}
+            mapeo_city_doc = {}
+            
+            if 'DIRECCION DE ENTREGA' in df_ehlpharma.columns:
+                mapeo_address_nit = df_ehlpharma.set_index('IDENTIFICACION')['DIRECCION DE ENTREGA'].to_dict()
+                mapeo_address_doc = df_ehlpharma.set_index('DOCUMENTO ASOCIADO')['DIRECCION DE ENTREGA'].to_dict()
+            if 'CELULAR' in df_ehlpharma.columns:
+                mapeo_phone_nit = df_ehlpharma.set_index('IDENTIFICACION')['CELULAR'].to_dict()
+                mapeo_phone_doc = df_ehlpharma.set_index('DOCUMENTO ASOCIADO')['CELULAR'].to_dict()
+            if 'CIUDAD DE ENTREGA' in df_ehlpharma.columns:
+                mapeo_city_nit = df_ehlpharma.set_index('IDENTIFICACION')['CIUDAD DE ENTREGA'].to_dict()
+                mapeo_city_doc = df_ehlpharma.set_index('DOCUMENTO ASOCIADO')['CIUDAD DE ENTREGA'].to_dict()
+            
+            # Aplicar mapeos - Intentar primero por NIT, luego por DOCUMENTO ASOCIADO
+            def obtener_idorder(row):
+                nit = str(row['nit'])
+                nrodcto_norm = row['Nrodcto_normalizado']
+                
+                # Prioridad 1: Por NIT
+                if nit in mapeo_nit_idorder:
+                    return mapeo_nit_idorder[nit]
+                # Prioridad 2: Por DOCUMENTO ASOCIADO (Nrodcto normalizado)
+                elif nrodcto_norm in mapeo_documento_idorder:
+                    return mapeo_documento_idorder[nrodcto_norm]
+                else:
+                    return ''
+            
+            def obtener_documento_asociado(row):
+                nit = str(row['nit'])
+                nrodcto_norm = row['Nrodcto_normalizado']
+                
+                # Prioridad 1: Por NIT
+                if nit in mapeo_nit_documento:
+                    return mapeo_nit_documento[nit]
+                # Prioridad 2: Por DOCUMENTO ASOCIADO normalizado (usar el mismo valor normalizado)
+                # Si el Nrodcto normalizado coincide con algún documento asociado normalizado
+                elif nrodcto_norm in mapeo_documento_idorder:
+                    # El documento asociado ya está normalizado en el DataFrame
+                    return nrodcto_norm
+                else:
+                    # Si no hay relación, usar el Nrodcto normalizado
+                    return nrodcto_norm
+            
+            def obtener_address_ehlpharma(row):
+                nit = str(row['nit'])
+                nrodcto_norm = row['Nrodcto_normalizado']
+                
+                # Prioridad 1: Por NIT
+                if nit in mapeo_address_nit and mapeo_address_nit[nit]:
+                    return mapeo_address_nit[nit]
+                # Prioridad 2: Por DOCUMENTO ASOCIADO
+                elif nrodcto_norm in mapeo_address_doc and mapeo_address_doc[nrodcto_norm]:
+                    return mapeo_address_doc[nrodcto_norm]
+                else:
+                    return ''
+            
+            def obtener_phone_ehlpharma(row):
+                nit = str(row['nit'])
+                nrodcto_norm = row['Nrodcto_normalizado']
+                
+                # Prioridad 1: Por NIT
+                if nit in mapeo_phone_nit and mapeo_phone_nit[nit]:
+                    return mapeo_phone_nit[nit]
+                # Prioridad 2: Por DOCUMENTO ASOCIADO
+                elif nrodcto_norm in mapeo_phone_doc and mapeo_phone_doc[nrodcto_norm]:
+                    return mapeo_phone_doc[nrodcto_norm]
+                else:
+                    return ''
+            
+            def obtener_city_ehlpharma(row):
+                nit = str(row['nit'])
+                nrodcto_norm = row['Nrodcto_normalizado']
+                
+                # Prioridad 1: Por NIT
+                if nit in mapeo_city_nit and mapeo_city_nit[nit]:
+                    return mapeo_city_nit[nit]
+                # Prioridad 2: Por DOCUMENTO ASOCIADO
+                elif nrodcto_norm in mapeo_city_doc and mapeo_city_doc[nrodcto_norm]:
+                    return mapeo_city_doc[nrodcto_norm]
+                else:
+                    return ''
+            
+            df_ofimatic['idOrder_mapeado'] = df_ofimatic.apply(obtener_idorder, axis=1)
+            df_ofimatic['documento_asociado_mapeado'] = df_ofimatic.apply(obtener_documento_asociado, axis=1)
+            df_ofimatic['address_ehlpharma'] = df_ofimatic.apply(obtener_address_ehlpharma, axis=1)
+            df_ofimatic['phone_ehlpharma'] = df_ofimatic.apply(obtener_phone_ehlpharma, axis=1)
+            df_ofimatic['city_ehlpharma'] = df_ofimatic.apply(obtener_city_ehlpharma, axis=1)
+            
+            # Limpiar idOrder_mapeado para evitar decimales y NaN
+            def limpiar_idorder(x):
+                if not x or pd.isna(x) or str(x).strip() == '' or str(x).lower() == 'nan':
+                    return ''
+                try:
+                    if str(x).replace('.','',1).replace('-','',1).isdigit():
+                        return str(int(float(x)))
+                    else:
+                        return str(x)
+                except:
+                    return ''
+            
+            df_ofimatic['idOrder_mapeado'] = df_ofimatic['idOrder_mapeado'].apply(limpiar_idorder)
+            
+            # Construir ID Referencia final: DOCUMENTO_ASOCIADO-NUMERO_DE_PEDIDO
+            # Solo si idOrder_mapeado tiene un valor válido (no vacío, no nan)
+            # Ejemplo: BG323213-089823912
+            def construir_id_referencia(row):
+                id_order = row['idOrder_mapeado']
+                # Verificar que idOrder_mapeado no esté vacío y no sea 'nan'
+                if id_order and str(id_order).strip() != '' and str(id_order).lower() != 'nan':
+                    return f"{row['documento_asociado_mapeado']}-{id_order}"
+                else:
+                    # Si no hay NUMERO DE PEDIDO válido, dejar solo el Nrodcto original
+                    return row['Nrodcto']
+            
+            df_ofimatic['Nrodcto_relacionado'] = df_ofimatic.apply(construir_id_referencia, axis=1)
+            
+            print(f"✅ Relacionados: {(df_ofimatic['idOrder_mapeado'] != '').sum()} de {len(df_ofimatic)} registros")
+            
+            # Paso 2: Transformar al formato Libro2.xlsx
+            print("🔄 Paso 2: Transformando al formato Libro2...")
+            
+            # Crear DataFrame con estructura de Libro2
+            df_libro2 = pd.DataFrame()
+            
+            # Nombre Vehiculo = NomMensajero (de ofimatic)
+            df_libro2['Nombre Vehiculo'] = df_ofimatic['NomMensajero'] if 'NomMensajero' in df_ofimatic.columns else ''
+            
+            # Título de la Visita = NOMBRE (de ofimatic)
+            df_libro2['Título de la Visita'] = df_ofimatic['NOMBRE'] if 'NOMBRE' in df_ofimatic.columns else ''
+            
+            # Dirección = Dirección de ehlpharma + ", " + ciudad + ", Cundinamarca"
+            df_libro2['Dirección'] = df_ofimatic.apply(
+                lambda row: self._construir_direccion_bogota(row),
+                axis=1
+            )
+            
+            # Latitud y Longitud - vacíos
+            df_libro2['Latitud'] = None
+            df_libro2['Longitud'] = None
+            
+            # ID Referencia = Nrodcto relacionado
+            df_libro2['ID Referencia'] = df_ofimatic['Nrodcto_relacionado']
+            
+            # Notas = TipoVta (de ofimatic)
+            df_libro2['Notas'] = df_ofimatic['TipoVta'] if 'TipoVta' in df_ofimatic.columns else ''
+            
+            # Persona de Contacto - vacío
+            df_libro2['Persona de Contacto'] = None
+            
+            # Teléfono = De ehlpharma si existe, sino TEL1 o TEL2 de ofimatic
+            df_libro2['Teléfono'] = df_ofimatic.apply(
+                lambda row: self._obtener_telefono(row),
+                axis=1
+            )
+            
+            # Emails - vacío
+            df_libro2['Emails'] = None
+            
+            print(f"✅ DataFrame Libro2 creado: {len(df_libro2)} registros")
+            
+            # Generar archivo Excel
+            print("💾 Generando archivo Excel formato Libro2...")
+            excel_buffer = BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                df_libro2.to_excel(writer, sheet_name='Hoja1', index=False)
+                
+                # Ajustar anchos de columna
+                workbook = writer.book
+                worksheet = writer.sheets['Hoja1']
+                
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if cell.value and len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 50)
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            excel_buffer.seek(0)
+            excel_data = base64.b64encode(excel_buffer.read()).decode('utf-8')
+            
+            print(f"✅ Proceso completado: {len(df_libro2)} registros en formato Libro2")
+            
+            from datetime import datetime
+            fecha_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            return {
+                'success': True,
+                'message': f'Archivo transformado exitosamente. {len(df_libro2)} registros en formato Libro2 Bogotá.',
+                'excel_data': excel_data,
+                'filename': f'Libro2_Bogota_{fecha_actual}.xlsx'
+            }
+            
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'error': f'Error al transformar a Libro2 Bogotá: {str(e)}',
+                'details': 'Verifica que los archivos tengan las columnas correctas'
+            }
+    
+    def _normalizar_documento_asociado(self, documento):
+        """
+        Normaliza el DOCUMENTO ASOCIADO de ehlpharma para facilitar la relación:
+        - "bg-753083" → "BG753083"
+        - "BG-753083" → "BG753083"
+        - "BG753083" → "BG753083"
+        - Convierte a MAYÚSCULAS y elimina guiones
+        """
+        if not documento or pd.isna(documento):
+            return ''
+        
+        documento_str = str(documento).strip().upper()
+        # Eliminar guiones
+        documento_str = documento_str.replace('-', '')
+        
+        return documento_str
+    
     def _normalizar_ciudad(self, ciudad):
         """
         Normaliza el nombre de la ciudad:
@@ -1501,14 +1846,12 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         else:
             return "Antioquia"
     
-    def _obtener_telefono(self, row, mapeo_phone):
+    def _obtener_telefono(self, row):
         """
-        Obtiene el teléfono priorizando el de la planilla madre
+        Obtiene el teléfono priorizando el de la planilla ehlpharma (desde phone_ehlpharma)
         Limpia decimales (.0) y valida que no sean números inválidos como 000
         Si TEL1 es inválido, prueba con TEL2 antes de descartar
         """
-        nit = str(row['nit'])
-        
         def limpiar_telefono(telefono):
             """Limpia y valida el teléfono"""
             if pd.isna(telefono):
@@ -1537,9 +1880,9 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             
             return telefono_str
         
-        # Prioridad 1: Teléfono de planilla madre
-        if nit in mapeo_phone and mapeo_phone[nit]:
-            telefono = limpiar_telefono(mapeo_phone[nit])
+        # Prioridad 1: Teléfono de planilla ehlpharma (columna phone_ehlpharma)
+        if 'phone_ehlpharma' in row and row['phone_ehlpharma']:
+            telefono = limpiar_telefono(row['phone_ehlpharma'])
             if telefono:
                 return telefono
         
@@ -1562,6 +1905,90 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             return tel2_valido
         
         return None
+    
+    def _construir_direccion_bogota(self, row):
+        """
+        Construye la dirección para Bogotá en formato: direccion, ciudad, Cundinamarca
+        - Si hay relación (idOrder_mapeado válido): Usa dirección de Helpharma (address_ehlpharma)
+        - Si no hay relación: Usa dirección de Ofimatic
+        - Extrae ciudad de "Zipaquirá-Cundinamarca-Colombia" → "ZIPAQUIRA"
+        - Extrae ciudad de "B-CIUDAD" → "CIUDAD" 
+        - Normaliza tildes y convierte a MAYÚSCULAS
+        """
+        tiene_relacion = row.get('idOrder_mapeado', '') and str(row.get('idOrder_mapeado', '')).strip() != '' and str(row.get('idOrder_mapeado', '')).lower() != 'nan'
+        
+        # Obtener ciudad de ehlpharma (CIUDAD DE ENTREGA) - columna city_ehlpharma
+        ciudad_ehlpharma = row.get('city_ehlpharma', '')
+        
+        # Obtener ciudad de ofimatic (Destino con formato "B-CIUDAD")
+        ciudad_ofimatic = row.get('Destino', '')
+        
+        # Procesar ciudad
+        ciudad = self._extraer_ciudad_bogota(ciudad_ehlpharma, ciudad_ofimatic)
+        
+        # Prioridad 1: Si hay relación, usar dirección de Helpharma (address_ehlpharma)
+        if tiene_relacion and 'address_ehlpharma' in row and row['address_ehlpharma'] and str(row['address_ehlpharma']).strip() != '':
+            direccion_base = str(row['address_ehlpharma']).strip()
+        # Prioridad 2: Si no hay relación, usar dirección de Ofimatic
+        elif 'DIRECCION' in row and pd.notna(row['DIRECCION']) and str(row['DIRECCION']).strip() != '':
+            direccion_base = str(row['DIRECCION']).strip()
+        # Prioridad 3: Si tampoco está en Ofimatic pero hay dirección en Helpharma, usarla
+        elif 'address_ehlpharma' in row and row['address_ehlpharma'] and str(row['address_ehlpharma']).strip() != '':
+            direccion_base = str(row['address_ehlpharma']).strip()
+        else:
+            direccion_base = ''
+        
+        # Agregar coma al final de la dirección si no está vacía
+        if direccion_base and not direccion_base.endswith(','):
+            direccion_base += ','
+        
+        # Construir dirección completa: "direccion, ciudad, Cundinamarca"
+        if direccion_base and ciudad:
+            return f"{direccion_base} {ciudad}, Cundinamarca"
+        elif direccion_base:
+            return f"{direccion_base} Cundinamarca"
+        elif ciudad:
+            return f"{ciudad}, Cundinamarca"
+        else:
+            return "Cundinamarca"
+    
+    def _extraer_ciudad_bogota(self, ciudad_ehlpharma, ciudad_ofimatic):
+        """
+        Extrae y normaliza el nombre de la ciudad para Bogotá
+        
+        Casos:
+        - "Zipaquirá-Cundinamarca-Colombia" → "ZIPAQUIRA"
+        - "ZIPAQUIRÁ" → "ZIPAQUIRA"
+        - "BOGOTÁ. D.C." → "BOGOTA"
+        - "B-BOGOTA" → "BOGOTA"
+        - "B-SOACHA" → "SOACHA"
+        """
+        ciudad = ''
+        
+        # Prioridad 1: Ciudad de ehlpharma
+        if ciudad_ehlpharma and pd.notna(ciudad_ehlpharma):
+            ciudad_str = str(ciudad_ehlpharma).strip()
+            
+            # Caso: "Zipaquirá-Cundinamarca-Colombia"
+            if '-' in ciudad_str:
+                ciudad = ciudad_str.split('-')[0].strip()
+            # Caso: "BOGOTÁ. D.C." o "ZIPAQUIRÁ"
+            else:
+                # Eliminar ". D.C." si existe
+                ciudad = ciudad_str.replace('. D.C.', '').replace('.D.C.', '').strip()
+        
+        # Prioridad 2: Ciudad de ofimatic (formato "B-CIUDAD")
+        if not ciudad and ciudad_ofimatic and pd.notna(ciudad_ofimatic):
+            ciudad_str = str(ciudad_ofimatic).strip()
+            
+            # Caso: "B-BOGOTA", "B-SOACHA"
+            if ciudad_str.startswith('B-'):
+                ciudad = ciudad_str[2:].strip()  # Quitar "B-"
+            else:
+                ciudad = ciudad_str
+        
+        # Normalizar: sin tildes y en MAYÚSCULAS
+        return self._normalizar_ciudad(ciudad)
     
     def send_json_response(self, data):
         json_data = json.dumps(data, ensure_ascii=False)
