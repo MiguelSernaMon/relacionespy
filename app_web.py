@@ -602,7 +602,8 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             <select id="modoSelector" class="file-input" style="padding: 12px;">
                 <option value="normal">Modo Normal (Madre + Ofimatic)</option>
                 <option value="bogota">Modo Bogotá (Relacionar por NIT)</option>
-                <option value="filtrar_bogota">Filtrar Bogotá (Solo B-BOGOTA)</option>
+                <option value="filtrar_bogota">Filtrar Bogotá (Solo B-BOGOTA y B-SOACHA)</option>
+                <option value="medellin_libro2">Medellín → Libro2 (Formato Ruteo)</option>
             </select>
         </div>
         
@@ -628,12 +629,23 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         </div>
         
         <div class="info-box" id="infoFiltrarBogota" style="display: none;">
-            <h3>📋 Filtrar pedidos de Bogotá (Solo B-BOGOTA):</h3>
+            <h3>📋 Filtrar pedidos de Bogotá (Solo B-BOGOTA y B-SOACHA):</h3>
             <ul>
                 <li><strong>Archivo:</strong> PLANILLAS OFMATIC BOGOTA.xlsx (o similar)</li>
-                <li><strong>Proceso:</strong> Filtra solo los pedidos con Destino = "B-BOGOTA"</li>
+                <li><strong>Proceso:</strong> Filtra solo los pedidos con Destino = "B-BOGOTA" o "B-SOACHA"</li>
                 <li><strong>Resultado:</strong> Excel filtrado con el mismo formato original</li>
                 <li><strong>Nota:</strong> Solo necesitas seleccionar UN archivo</li>
+            </ul>
+        </div>
+        
+        <div class="info-box" id="infoMedellinLibro2" style="display: none;">
+            <h3>📋 Medellín → Libro2 (Formato Ruteo):</h3>
+            <ul>
+                <li><strong>Planilla Madre:</strong> Excel con datos de Medellín (identificationPatient, idOrder, addressPatient, phonePatient, cityNameOrder)</li>
+                <li><strong>Planilla Ofimatic:</strong> PLANILLAS OFMATIC BOGOTA.xlsx (con nit, Nrodcto, NOMBRE, DIRECCION, TEL1, TEL2, TipoVta, Destino)</li>
+                <li><strong>Proceso:</strong> Relaciona por NIT y transforma al formato Libro2.xlsx para ruteo</li>
+                <li><strong>Resultado:</strong> Excel con formato: Nombre Vehículo, Título de la Visita, Dirección, ID Referencia, Notas, Teléfono</li>
+                <li><strong>Dirección:</strong> Se usa la de la planilla madre + ", " + ciudad + ", Antioquia"</li>
             </ul>
         </div>
         
@@ -678,6 +690,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         const infoNormal = document.getElementById('infoNormal');
         const infoBogota = document.getElementById('infoBogota');
         const infoFiltrarBogota = document.getElementById('infoFiltrarBogota');
+        const infoMedellinLibro2 = document.getElementById('infoMedellinLibro2');
         
         // Cambiar etiquetas y descripciones según el modo
         modoSelector.addEventListener('change', () => {
@@ -690,6 +703,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 infoNormal.style.display = 'none';
                 infoBogota.style.display = 'block';
                 infoFiltrarBogota.style.display = 'none';
+                infoMedellinLibro2.style.display = 'none';
                 processBtn.textContent = '3️⃣ ¡RELACIONAR PLANILLAS BOGOTÁ!';
                 madreFile.required = true;
                 ofimaticFile.required = true;
@@ -700,9 +714,22 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 infoNormal.style.display = 'none';
                 infoBogota.style.display = 'none';
                 infoFiltrarBogota.style.display = 'block';
+                infoMedellinLibro2.style.display = 'none';
                 processBtn.textContent = '2️⃣ ¡FILTRAR PEDIDOS BOGOTÁ!';
                 madreFile.required = true;
                 ofimaticFile.required = false;
+            } else if (modo === 'medellin_libro2') {
+                madreLabel.textContent = '1️⃣ Planilla Madre Medellín (.xlsx)';
+                ofimaticLabel.textContent = '2️⃣ Planilla Ofimatic (.xlsx)';
+                document.getElementById('madreSection').style.display = 'block';
+                document.getElementById('ofimaticSection').style.display = 'block';
+                infoNormal.style.display = 'none';
+                infoBogota.style.display = 'none';
+                infoFiltrarBogota.style.display = 'none';
+                infoMedellinLibro2.style.display = 'block';
+                processBtn.textContent = '3️⃣ ¡GENERAR ARCHIVO LIBRO2!';
+                madreFile.required = true;
+                ofimaticFile.required = true;
             } else {
                 madreLabel.textContent = '1️⃣ Planilla Madre (.csv/.xlsx/.xls)';
                 ofimaticLabel.textContent = '2️⃣ Planilla Ofimatic (.csv/.xlsx/.xls)';
@@ -711,6 +738,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 infoNormal.style.display = 'block';
                 infoBogota.style.display = 'none';
                 infoFiltrarBogota.style.display = 'none';
+                infoMedellinLibro2.style.display = 'none';
                 processBtn.textContent = '3️⃣ ¡GENERAR ARCHIVO COMBINADO!';
                 madreFile.required = true;
                 ofimaticFile.required = true;
@@ -930,6 +958,18 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                     })
                     return
                 result = self.process_bogota_files(
+                    files['madre'], filenames['madre'],
+                    files['ofimatic'], filenames['ofimatic']
+                )
+            elif modo == 'medellin_libro2':
+                if 'ofimatic' not in files:
+                    self.send_json_response({
+                        'success': False, 
+                        'error': 'No se pudieron leer los archivos',
+                        'details': 'Asegúrate de que ambos archivos están seleccionados'
+                    })
+                    return
+                result = self.process_medellin_libro2(
                     files['madre'], filenames['madre'],
                     files['ofimatic'], filenames['ofimatic']
                 )
@@ -1232,6 +1272,289 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 'error': f'Error al filtrar archivo: {str(e)}',
                 'details': 'Verifica que el archivo sea Excel (.xlsx) y tenga la estructura correcta'
             }
+    
+    def process_medellin_libro2(self, madre_content, madre_filename, ofimatic_content, ofimatic_filename):
+        """
+        Procesa archivos de Medellín (madre + ofimatic) y los transforma al formato Libro2.xlsx
+        """
+        try:
+            print(f"🔄 [MEDELLÍN → LIBRO2] Procesando archivos: {madre_filename} y {ofimatic_filename}")
+            
+            # Leer planilla madre
+            df_madre = leer_excel_inteligente_desde_contenido(madre_content)
+            print(f"✅ Planilla madre leída: {len(df_madre)} filas")
+            print(f"   Columnas disponibles: {list(df_madre.columns)}")
+            
+            # Leer planilla ofimatic (con estructura especial de 4 filas de encabezado)
+            df_ofimatic = pd.read_excel(BytesIO(ofimatic_content), header=3)
+            print(f"✅ Planilla ofimatic leída: {len(df_ofimatic)} filas")
+            print(f"   Columnas disponibles: {list(df_ofimatic.columns)}")
+            
+            # Verificar columnas requeridas en planilla madre
+            required_madre_cols = ['identificationPatient', 'idOrder']
+            optional_madre_cols = ['addressPatient', 'phonePatient', 'cityNameOrder']
+            missing_madre = [col for col in required_madre_cols if col not in df_madre.columns]
+            if missing_madre:
+                return {
+                    'success': False,
+                    'error': f'Columnas faltantes en planilla madre: {missing_madre}',
+                    'details': f'Columnas disponibles: {list(df_madre.columns)}'
+                }
+            
+            # Verificar columnas requeridas en planilla ofimatic
+            required_ofimatic_cols = ['nit', 'Nrodcto']
+            optional_ofimatic_cols = ['NOMBRE', 'DIRECCION', 'TEL1', 'TEL2', 'TipoVta', 'Destino']
+            missing_ofimatic = [col for col in required_ofimatic_cols if col not in df_ofimatic.columns]
+            if missing_ofimatic:
+                return {
+                    'success': False,
+                    'error': f'Columnas faltantes en planilla ofimatic: {missing_ofimatic}',
+                    'details': f'Columnas disponibles: {list(df_ofimatic.columns)}'
+                }
+            
+            # Normalizar tipos de datos
+            df_madre['identificationPatient'] = df_madre['identificationPatient'].astype(str)
+            df_ofimatic['nit'] = df_ofimatic['nit'].astype(str)
+            
+            # Paso 1: Relacionar por NIT (igual que en Medellín normal)
+            print("🔗 Paso 1: Relacionando por NIT...")
+            mapeo_nit_idorder = df_madre.set_index('identificationPatient')['idOrder'].to_dict()
+            
+            # Crear diccionarios de mapeo adicionales desde la planilla madre
+            mapeo_address = {}
+            mapeo_phone = {}
+            mapeo_city = {}
+            
+            if 'addressPatient' in df_madre.columns:
+                mapeo_address = df_madre.set_index('identificationPatient')['addressPatient'].to_dict()
+            if 'phonePatient' in df_madre.columns:
+                mapeo_phone = df_madre.set_index('identificationPatient')['phonePatient'].to_dict()
+            if 'cityNameOrder' in df_madre.columns:
+                mapeo_city = df_madre.set_index('identificationPatient')['cityNameOrder'].to_dict()
+            
+            # Aplicar mapeos
+            df_ofimatic['idOrder_mapeado'] = df_ofimatic['nit'].map(mapeo_nit_idorder).fillna('')
+            df_ofimatic['addressPatient_madre'] = df_ofimatic['nit'].map(mapeo_address).fillna('')
+            df_ofimatic['phonePatient_madre'] = df_ofimatic['nit'].map(mapeo_phone).fillna('')
+            df_ofimatic['cityNameOrder_madre'] = df_ofimatic['nit'].map(mapeo_city).fillna('')
+            
+            # Limpiar idOrder_mapeado para evitar decimales
+            df_ofimatic['idOrder_mapeado'] = df_ofimatic['idOrder_mapeado'].apply(
+                lambda x: str(int(float(x))) if x and str(x).replace('.','',1).replace('-','',1).isdigit() else str(x)
+            )
+            
+            # Actualizar Nrodcto con el formato: Nrodcto-idOrder
+            df_ofimatic['Nrodcto_relacionado'] = df_ofimatic.apply(
+                lambda row: f"{row['Nrodcto']}-{row['idOrder_mapeado']}" if row['idOrder_mapeado'] else row['Nrodcto'],
+                axis=1
+            )
+            
+            print(f"✅ Relacionados: {(df_ofimatic['idOrder_mapeado'] != '').sum()} de {len(df_ofimatic)} registros")
+            
+            # Paso 2: Transformar al formato Libro2.xlsx
+            print("🔄 Paso 2: Transformando al formato Libro2...")
+            
+            # Crear DataFrame con estructura de Libro2
+            df_libro2 = pd.DataFrame()
+            
+            # Nombre Vehiculo - Valor fijo o vacío por ahora
+            df_libro2['Nombre Vehiculo'] = ''
+            
+            # Título de la Visita = NOMBRE (de ofimatic)
+            df_libro2['Título de la Visita'] = df_ofimatic['NOMBRE'] if 'NOMBRE' in df_ofimatic.columns else ''
+            
+            # Dirección = addressPatient de madre (si existe) + ", " + ciudad + ", Antioquia"
+            # Si no hay dirección de madre, usar DIRECCION de ofimatic
+            df_libro2['Dirección'] = df_ofimatic.apply(
+                lambda row: self._construir_direccion(row, mapeo_address, mapeo_city),
+                axis=1
+            )
+            
+            # Latitud y Longitud - vacíos
+            df_libro2['Latitud'] = None
+            df_libro2['Longitud'] = None
+            
+            # ID Referencia = Nrodcto relacionado
+            df_libro2['ID Referencia'] = df_ofimatic['Nrodcto_relacionado']
+            
+            # Notas = TipoVta (de ofimatic)
+            df_libro2['Notas'] = df_ofimatic['TipoVta'] if 'TipoVta' in df_ofimatic.columns else ''
+            
+            # Persona de Contacto - vacío
+            df_libro2['Persona de Contacto'] = None
+            
+            # Teléfono = De madre si existe, sino de ofimatic (TEL1)
+            df_libro2['Teléfono'] = df_ofimatic.apply(
+                lambda row: self._obtener_telefono(row, mapeo_phone),
+                axis=1
+            )
+            
+            # Emails - vacío
+            df_libro2['Emails'] = None
+            
+            print(f"✅ DataFrame Libro2 creado: {len(df_libro2)} registros")
+            
+            # Generar archivo Excel
+            print("💾 Generando archivo Excel formato Libro2...")
+            excel_buffer = BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                df_libro2.to_excel(writer, sheet_name='Hoja1', index=False)
+                
+                # Ajustar anchos de columna
+                workbook = writer.book
+                worksheet = writer.sheets['Hoja1']
+                
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if cell.value and len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 50)
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            excel_buffer.seek(0)
+            excel_data = base64.b64encode(excel_buffer.read()).decode('utf-8')
+            
+            print(f"✅ Proceso completado: {len(df_libro2)} registros en formato Libro2")
+            
+            from datetime import datetime
+            fecha_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            return {
+                'success': True,
+                'message': f'Archivo transformado exitosamente. {len(df_libro2)} registros en formato Libro2.',
+                'excel_data': excel_data,
+                'filename': f'Libro2_Medellin_{fecha_actual}.xlsx'
+            }
+            
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'error': f'Error al transformar a Libro2: {str(e)}',
+                'details': 'Verifica que los archivos tengan las columnas correctas'
+            }
+    
+    def _normalizar_ciudad(self, ciudad):
+        """
+        Normaliza el nombre de la ciudad:
+        - Elimina tildes y caracteres especiales
+        - Convierte a MAYÚSCULAS
+        """
+        if not ciudad or pd.isna(ciudad):
+            return ''
+        
+        ciudad_str = str(ciudad).strip()
+        
+        # Mapeo de caracteres con tilde a sin tilde
+        tildes = {
+            'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u',
+            'Á': 'A', 'É': 'E', 'Í': 'I', 'Ó': 'O', 'Ú': 'U',
+            'ñ': 'n', 'Ñ': 'N',
+            'ü': 'u', 'Ü': 'U'
+        }
+        
+        # Reemplazar caracteres con tilde
+        for con_tilde, sin_tilde in tildes.items():
+            ciudad_str = ciudad_str.replace(con_tilde, sin_tilde)
+        
+        # Convertir a mayúsculas
+        return ciudad_str.upper()
+    
+    def _construir_direccion(self, row, mapeo_address, mapeo_city):
+        """
+        Construye la dirección en formato: direccion, ciudad, Antioquia
+        Prioriza la dirección de la planilla madre, si no existe usa la de ofimatic
+        """
+        nit = str(row['nit'])
+        ciudad_raw = mapeo_city.get(nit, row.get('Destino', ''))
+        
+        # Normalizar ciudad (sin tildes, en MAYÚSCULAS)
+        ciudad = self._normalizar_ciudad(ciudad_raw)
+        
+        # Prioridad 1: Dirección de planilla madre
+        if nit in mapeo_address and mapeo_address[nit]:
+            direccion_base = str(mapeo_address[nit]).strip()
+        # Prioridad 2: Dirección de planilla ofimatic
+        elif 'DIRECCION' in row and pd.notna(row['DIRECCION']):
+            direccion_base = str(row['DIRECCION']).strip()
+        else:
+            direccion_base = ''
+        
+        # Agregar coma al final de la dirección si no está vacía
+        if direccion_base and not direccion_base.endswith(','):
+            direccion_base += ','
+        
+        # Construir dirección completa: "direccion, ciudad, Antioquia"
+        if direccion_base and ciudad:
+            return f"{direccion_base} {ciudad}, Antioquia"
+        elif direccion_base:
+            return f"{direccion_base} Antioquia"
+        elif ciudad:
+            return f"{ciudad}, Antioquia"
+        else:
+            return "Antioquia"
+    
+    def _obtener_telefono(self, row, mapeo_phone):
+        """
+        Obtiene el teléfono priorizando el de la planilla madre
+        Limpia decimales (.0) y valida que no sean números inválidos como 000
+        """
+        nit = str(row['nit'])
+        
+        def limpiar_telefono(telefono):
+            """Limpia y valida el teléfono"""
+            if pd.isna(telefono):
+                return None
+            
+            telefono_str = str(telefono).strip()
+            
+            # Eliminar .0 al final si existe
+            if telefono_str.endswith('.0'):
+                telefono_str = telefono_str[:-2]
+            
+            # Convertir a int y luego a str si es un número flotante
+            try:
+                if '.' in str(telefono):
+                    telefono_str = str(int(float(telefono)))
+            except:
+                pass
+            
+            # Validar que no sea vacío, nan, none, o inválido
+            if not telefono_str or telefono_str.lower() in ['nan', 'none', '']:
+                return None
+            
+            # Validar que no sea solo ceros (000, 0000, etc.)
+            if telefono_str.replace('0', '') == '':
+                return None
+            
+            return telefono_str
+        
+        # Prioridad 1: Teléfono de planilla madre
+        if nit in mapeo_phone and mapeo_phone[nit]:
+            telefono = limpiar_telefono(mapeo_phone[nit])
+            if telefono:
+                return telefono
+        
+        # Prioridad 2: TEL1 de planilla ofimatic
+        if 'TEL1' in row and pd.notna(row['TEL1']):
+            telefono = limpiar_telefono(row['TEL1'])
+            if telefono:
+                return telefono
+        
+        # Prioridad 3: TEL2 de planilla ofimatic
+        if 'TEL2' in row and pd.notna(row['TEL2']):
+            telefono = limpiar_telefono(row['TEL2'])
+            if telefono:
+                return telefono
+        
+        return None
     
     def send_json_response(self, data):
         json_data = json.dumps(data, ensure_ascii=False)
