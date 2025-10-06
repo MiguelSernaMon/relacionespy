@@ -1292,7 +1292,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             
             # Verificar columnas requeridas en planilla madre
             required_madre_cols = ['identificationPatient', 'idOrder']
-            optional_madre_cols = ['addressPatient', 'phonePatient', 'cityNameOrder']
+            optional_madre_cols = ['addressPatient', 'mobilePhonePatient', 'cityNameOrder']
             missing_madre = [col for col in required_madre_cols if col not in df_madre.columns]
             if missing_madre:
                 return {
@@ -1303,7 +1303,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             
             # Verificar columnas requeridas en planilla ofimatic
             required_ofimatic_cols = ['nit', 'Nrodcto']
-            optional_ofimatic_cols = ['NOMBRE', 'DIRECCION', 'TEL1', 'TEL2', 'TipoVta', 'Destino']
+            optional_ofimatic_cols = ['NomMensajero', 'NOMBRE', 'DIRECCION', 'TEL1', 'TEL2', 'TipoVta', 'Destino']
             missing_ofimatic = [col for col in required_ofimatic_cols if col not in df_ofimatic.columns]
             if missing_ofimatic:
                 return {
@@ -1327,8 +1327,8 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             
             if 'addressPatient' in df_madre.columns:
                 mapeo_address = df_madre.set_index('identificationPatient')['addressPatient'].to_dict()
-            if 'phonePatient' in df_madre.columns:
-                mapeo_phone = df_madre.set_index('identificationPatient')['phonePatient'].to_dict()
+            if 'mobilePhonePatient' in df_madre.columns:
+                mapeo_phone = df_madre.set_index('identificationPatient')['mobilePhonePatient'].to_dict()
             if 'cityNameOrder' in df_madre.columns:
                 mapeo_city = df_madre.set_index('identificationPatient')['cityNameOrder'].to_dict()
             
@@ -1357,8 +1357,8 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             # Crear DataFrame con estructura de Libro2
             df_libro2 = pd.DataFrame()
             
-            # Nombre Vehiculo - Valor fijo o vacío por ahora
-            df_libro2['Nombre Vehiculo'] = ''
+            # Nombre Vehiculo = NomMensajero (de ofimatic)
+            df_libro2['Nombre Vehiculo'] = df_ofimatic['NomMensajero'] if 'NomMensajero' in df_ofimatic.columns else ''
             
             # Título de la Visita = NOMBRE (de ofimatic)
             df_libro2['Título de la Visita'] = df_ofimatic['NOMBRE'] if 'NOMBRE' in df_ofimatic.columns else ''
@@ -1383,7 +1383,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             # Persona de Contacto - vacío
             df_libro2['Persona de Contacto'] = None
             
-            # Teléfono = De madre si existe, sino de ofimatic (TEL1)
+            # Teléfono = mobilePhonePatient de madre si existe, sino TEL1 o TEL2 de ofimatic
             df_libro2['Teléfono'] = df_ofimatic.apply(
                 lambda row: self._obtener_telefono(row, mapeo_phone),
                 axis=1
@@ -1505,6 +1505,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         """
         Obtiene el teléfono priorizando el de la planilla madre
         Limpia decimales (.0) y valida que no sean números inválidos como 000
+        Si TEL1 es inválido, prueba con TEL2 antes de descartar
         """
         nit = str(row['nit'])
         
@@ -1543,16 +1544,22 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 return telefono
         
         # Prioridad 2: TEL1 de planilla ofimatic
+        tel1_valido = None
         if 'TEL1' in row and pd.notna(row['TEL1']):
-            telefono = limpiar_telefono(row['TEL1'])
-            if telefono:
-                return telefono
+            tel1_valido = limpiar_telefono(row['TEL1'])
         
         # Prioridad 3: TEL2 de planilla ofimatic
+        tel2_valido = None
         if 'TEL2' in row and pd.notna(row['TEL2']):
-            telefono = limpiar_telefono(row['TEL2'])
-            if telefono:
-                return telefono
+            tel2_valido = limpiar_telefono(row['TEL2'])
+        
+        # Si TEL1 es válido, usarlo
+        if tel1_valido:
+            return tel1_valido
+        
+        # Si TEL1 no es válido pero TEL2 sí, usar TEL2
+        if tel2_valido:
+            return tel2_valido
         
         return None
     
