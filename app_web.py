@@ -1436,7 +1436,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             
             # Teléfono = mobilePhonePatient de madre si existe, sino TEL1 o TEL2 de ofimatic
             df_libro2['Teléfono'] = df_ofimatic.apply(
-                lambda row: self._obtener_telefono(row, mapeo_phone),
+                lambda row: self._obtener_telefono_medellin(row),
                 axis=1
             )
             
@@ -1845,6 +1845,66 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             return f"{ciudad}, Antioquia"
         else:
             return "Antioquia"
+    
+    def _obtener_telefono_medellin(self, row):
+        """
+        Obtiene el teléfono para Medellín priorizando el de la planilla madre (phonePatient_madre)
+        Limpia decimales (.0) y valida que no sean números inválidos como 000
+        Si TEL1 es inválido, prueba con TEL2 antes de descartar
+        """
+        def limpiar_telefono(telefono):
+            """Limpia y valida el teléfono"""
+            if pd.isna(telefono):
+                return None
+            
+            telefono_str = str(telefono).strip()
+            
+            # Eliminar .0 al final si existe
+            if telefono_str.endswith('.0'):
+                telefono_str = telefono_str[:-2]
+            
+            # Convertir a int y luego a str si es un número flotante
+            try:
+                if '.' in str(telefono):
+                    telefono_str = str(int(float(telefono)))
+            except:
+                pass
+            
+            # Validar que no sea vacío, nan, none, o inválido
+            if not telefono_str or telefono_str.lower() in ['nan', 'none', '']:
+                return None
+            
+            # Validar que no sea solo ceros (000, 0000, etc.)
+            if telefono_str.replace('0', '') == '':
+                return None
+            
+            return telefono_str
+        
+        # Prioridad 1: Teléfono de planilla madre (columna phonePatient_madre)
+        if 'phonePatient_madre' in row and row['phonePatient_madre']:
+            telefono = limpiar_telefono(row['phonePatient_madre'])
+            if telefono:
+                return telefono
+        
+        # Prioridad 2: TEL1 de planilla ofimatic
+        tel1_valido = None
+        if 'TEL1' in row and pd.notna(row['TEL1']):
+            tel1_valido = limpiar_telefono(row['TEL1'])
+        
+        # Prioridad 3: TEL2 de planilla ofimatic
+        tel2_valido = None
+        if 'TEL2' in row and pd.notna(row['TEL2']):
+            tel2_valido = limpiar_telefono(row['TEL2'])
+        
+        # Si TEL1 es válido, usarlo
+        if tel1_valido:
+            return tel1_valido
+        
+        # Si TEL1 no es válido pero TEL2 sí, usar TEL2
+        if tel2_valido:
+            return tel2_valido
+        
+        return None
     
     def _obtener_telefono(self, row):
         """
