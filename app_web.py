@@ -2059,31 +2059,49 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         self.wfile.write(json_data.encode('utf-8'))
 
 def start_server(port=8080):
-    """Inicia el servidor web local"""
+    """Inicia el servidor web local o en Render"""
     try:
-        server_address = ('localhost', port)
+        # Obtener puerto de variables de entorno (Render lo proporciona)
+        port = int(os.environ.get('PORT', port))
+        
+        # Determinar si estamos en producción o desarrollo
+        is_production = os.environ.get('RENDER', False)
+        
+        # En producción (Render), escuchar en 0.0.0.0, en desarrollo en localhost
+        host = '0.0.0.0' if is_production else 'localhost'
+        server_address = (host, port)
+        
         httpd = HTTPServer(server_address, MailboxHandler)
         
-        print(f"🚀 Iniciando servidor en http://localhost:{port}")
+        print(f"🚀 Iniciando servidor en http://{host}:{port}")
         print("📂 Directorio actual:", os.getcwd())
+        print(f"🌍 Modo: {'Producción (Render)' if is_production else 'Desarrollo (Local)'}")
         print("✅ Servidor iniciado correctamente")
-        print("🌐 Abriendo navegador automáticamente...")
         
-        # Abrir navegador automáticamente después de un breve retraso
-        def open_browser():
-            time.sleep(1.5)
-            webbrowser.open(f'http://localhost:{port}')
-        
-        browser_thread = threading.Thread(target=open_browser)
-        browser_thread.daemon = True
-        browser_thread.start()
-        
-        print("\n" + "="*50)
-        print("💡 INSTRUCCIONES:")
-        print("1. El navegador se abrirá automáticamente")
-        print("2. Si no se abre, ve a: http://localhost:8080")
-        print("3. Para cerrar: presiona Ctrl+C en esta terminal")
-        print("="*50 + "\n")
+        # Solo abrir navegador en modo desarrollo (local)
+        if not is_production:
+            print("🌐 Abriendo navegador automáticamente...")
+            
+            # Abrir navegador automáticamente después de un breve retraso
+            def open_browser():
+                time.sleep(1.5)
+                webbrowser.open(f'http://localhost:{port}')
+            
+            browser_thread = threading.Thread(target=open_browser)
+            browser_thread.daemon = True
+            browser_thread.start()
+            
+            print("\n" + "="*50)
+            print("💡 INSTRUCCIONES:")
+            print("1. El navegador se abrirá automáticamente")
+            print(f"2. Si no se abre, ve a: http://localhost:{port}")
+            print("3. Para cerrar: presiona Ctrl+C en esta terminal")
+            print("="*50 + "\n")
+        else:
+            print("\n" + "="*50)
+            print("✅ Servidor desplegado en Render")
+            print(f"🌐 Puerto: {port}")
+            print("="*50 + "\n")
         
         httpd.serve_forever()
         
@@ -2093,7 +2111,7 @@ def start_server(port=8080):
         print("👋 ¡Hasta pronto!")
     except Exception as e:
         print(f"❌ Error al iniciar el servidor: {e}")
-        print("💡 Intenta con otro puerto o verifica que el puerto 8080 esté libre")
+        print("💡 Intenta con otro puerto o verifica que el puerto esté libre")
 
 def main():
     print("🚀 Creador de Relaciones Mailbox - Versión Web")
