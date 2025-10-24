@@ -371,9 +371,55 @@ class MailboxHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/process':
             self.process_files()
+        elif self.path == '/process_farmabogota_libro2':
+            self.process_farmabogota_files()
         else:
             self.send_response(404)
             self.end_headers()
+
+    def process_farmabogota_files(self):
+        """Procesa el archivo de FarmaBogota y lo transforma a formato Libro2"""
+        import cgi
+        try:
+            # Leer el archivo enviado
+            form = cgi.FieldStorage(
+                fp=self.rfile,
+                headers=self.headers,
+                environ={'REQUEST_METHOD': 'POST',
+                        'CONTENT_TYPE': self.headers['Content-Type']})
+            
+            # Verificar si se recibió el archivo
+            if 'file' not in form:
+                self.send_json_response({
+                    'success': False,
+                    'error': 'No se recibió ningún archivo'
+                })
+                return
+            
+            # Obtener el archivo
+            fileitem = form['file']
+            if not fileitem.filename:
+                self.send_json_response({
+                    'success': False,
+                    'error': 'Archivo no seleccionado'
+                })
+                return
+            
+            # Leer el contenido del archivo
+            file_content = fileitem.file.read()
+            
+            # Procesar el archivo y generar la respuesta
+            response_data = self.process_farmabogota_libro2(file_content, fileitem.filename)
+            
+            # Enviar respuesta
+            self.send_json_response(response_data)
+            
+        except Exception as e:
+            self.send_json_response({
+                'success': False, 
+                'error': f'Error inesperado: {str(e)}',
+                'details': 'Verifica que el archivo tenga el formato correcto'
+            })
     
     def send_html_app(self):
         html_content = """
@@ -611,6 +657,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 <option value="filtrar_bogota">Filtrar Bogotá (Solo B-BOGOTA y B-SOACHA)</option>
                 <option value="medellin_libro2">Medellín → Libro2 (Formato Ruteo)</option>
                 <option value="bogota_libro2">Bogotá → Libro2 (Formato Ruteo)</option>
+                <option value="farmabogota_libro2">FarmaBogota → Libro2 (Formato Ruteo)</option>
             </select>
         </div>
         
@@ -669,6 +716,19 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 <li><strong>Teléfono:</strong> CELULAR de ehlpharma, sino TEL1 o TEL2 de ofimatic</li>
             </ul>
         </div>
+
+        <div class="info-box" id="infoFarmaBogotaLibro2" style="display: none;">
+            <h3>📋 FarmaBogota → Libro2 (Formato Ruteo):</h3>
+            <ul>
+                <li><strong>Archivo FarmaBogota:</strong> Excel con columnas PACIENTE, NUMERO DE PEDIDO, DIRECCION DE ENTREGA, CELULAR, CIUDAD DE ENTREGA, DOCUMENTO ASOCIADO</li>
+                <li><strong>Proceso:</strong> Transforma al formato Libro2.xlsx para ruteo</li>
+                <li><strong>Resultado:</strong> Excel con formato: Nombre Vehículo, Título de la Visita, Dirección, ID Referencia, Teléfono, etc.</li>
+                <li><strong>Título Visita:</strong> Campo PACIENTE</li>
+                <li><strong>Dirección:</strong> DIRECCION DE ENTREGA + ", " + CIUDAD DE ENTREGA</li>
+                <li><strong>ID Referencia:</strong> DOCUMENTO ASOCIADO + "-" + NUMERO DE PEDIDO</li>
+                <li><strong>Teléfono:</strong> CELULAR (limpiando .0 y validando)</li>
+            </ul>
+        </div>
         
         <form id="fileForm">
             <div class="file-section" id="madreSection">
@@ -713,6 +773,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         const infoFiltrarBogota = document.getElementById('infoFiltrarBogota');
         const infoMedellinLibro2 = document.getElementById('infoMedellinLibro2');
         const infoBogotaLibro2 = document.getElementById('infoBogotaLibro2');
+        const infoFarmaBogotaLibro2 = document.getElementById('infoFarmaBogotaLibro2');
         
         // Cambiar etiquetas y descripciones según el modo
         modoSelector.addEventListener('change', () => {
@@ -765,9 +826,23 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 infoFiltrarBogota.style.display = 'none';
                 infoMedellinLibro2.style.display = 'none';
                 infoBogotaLibro2.style.display = 'block';
+                infoFarmaBogotaLibro2.style.display = 'none';
                 processBtn.textContent = '3️⃣ ¡GENERAR ARCHIVO LIBRO2 BOGOTÁ!';
                 madreFile.required = true;
                 ofimaticFile.required = true;
+            } else if (modo === 'farmabogota_libro2') {
+                madreLabel.textContent = '1️⃣ Planilla FarmaBogota (.xlsx)';
+                document.getElementById('madreSection').style.display = 'block';
+                document.getElementById('ofimaticSection').style.display = 'none';
+                infoNormal.style.display = 'none';
+                infoBogota.style.display = 'none';
+                infoFiltrarBogota.style.display = 'none';
+                infoMedellinLibro2.style.display = 'none';
+                infoBogotaLibro2.style.display = 'none';
+                infoFarmaBogotaLibro2.style.display = 'block';
+                processBtn.textContent = '2️⃣ ¡GENERAR ARCHIVO LIBRO2 FARMABOGOTA!';
+                madreFile.required = true;
+                ofimaticFile.required = false;
             } else {
                 madreLabel.textContent = '1️⃣ Planilla Madre (.csv/.xlsx/.xls)';
                 ofimaticLabel.textContent = '2️⃣ Planilla Ofimatic (.csv/.xlsx/.xls)';
@@ -814,9 +889,11 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             const madreReady = madreFile.files.length > 0;
             const ofimaticReady = ofimaticFile.files.length > 0;
             
-            if (modo === 'filtrar_bogota') {
+            // Modos que solo requieren un archivo
+            if (modo === 'filtrar_bogota' || modo === 'farmabogota_libro2') {
                 processBtn.disabled = !madreReady;
             } else {
+                // Modos que requieren ambos archivos
                 processBtn.disabled = !(madreReady && ofimaticReady);
             }
         }
@@ -835,9 +912,9 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             const modo = modoSelector.value;
             
             // Validar según el modo
-            if (modo === 'filtrar_bogota') {
+            if (modo === 'filtrar_bogota' || modo === 'farmabogota_libro2') {
                 if (!madreFile.files[0]) {
-                    alert('Por favor, selecciona el archivo de planilla Ofimatic Bogotá.');
+                    alert('Por favor, selecciona el archivo requerido.');
                     return;
                 }
             } else {
@@ -853,14 +930,21 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             result.style.display = 'none';
             
             try {
+                let url = '/process';
                 const formData = new FormData();
-                formData.append('madre', madreFile.files[0]);
-                if (modo !== 'filtrar_bogota' && ofimaticFile.files[0]) {
-                    formData.append('ofimatic', ofimaticFile.files[0]);
-                }
-                formData.append('modo', modo);
                 
-                const response = await fetch('/process', {
+                if (modo === 'farmabogota_libro2') {
+                    url = '/process_farmabogota_libro2';
+                    formData.append('file', madreFile.files[0]);
+                } else {
+                    formData.append('madre', madreFile.files[0]);
+                    if (modo !== 'filtrar_bogota' && ofimaticFile.files[0]) {
+                        formData.append('ofimatic', ofimaticFile.files[0]);
+                    }
+                    formData.append('modo', modo);
+                }
+                
+                const response = await fetch(url, {
                     method: 'POST',
                     body: formData
                 });
@@ -2011,6 +2095,116 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             return f"{ciudad}, Cundinamarca"
         else:
             return "Cundinamarca"
+
+    def process_farmabogota_libro2(self, farmabogota_content, farmabogota_filename):
+        """
+        Procesa archivo de farmabogota y lo transforma al formato Libro2.xlsx
+        """
+        try:
+            print(f"🔄 [FARMABOGOTA → LIBRO2] Procesando archivo: {farmabogota_filename}")
+            
+            # Leer archivo farmabogota
+            df_farmabogota = leer_excel_inteligente_desde_contenido(farmabogota_content)
+            print(f"✅ Archivo farmabogota leído: {len(df_farmabogota)} filas")
+            print(f"   Columnas disponibles: {list(df_farmabogota.columns)}")
+            
+            # Verificar columnas requeridas
+            required_cols = ['NUMERO DE PEDIDO', 'PACIENTE', 'IDENTIFICACION', 
+                           'CIUDAD DE ENTREGA', 'DIRECCION DE ENTREGA', 'CELULAR',
+                           'DOCUMENTO ASOCIADO']
+                           
+            missing_cols = [col for col in required_cols if col not in df_farmabogota.columns]
+            if missing_cols:
+                return {
+                    'success': False,
+                    'error': f'Columnas faltantes en farmabogota: {missing_cols}',
+                    'details': f'Columnas disponibles: {list(df_farmabogota.columns)}'
+                }
+                
+            # Crear DataFrame con estructura de Libro2
+            df_libro2 = pd.DataFrame()
+            
+            # Nombre Vehículo - vacío por ahora
+            df_libro2['Nombre Vehiculo'] = ''
+            
+            # Título de la Visita = PACIENTE
+            df_libro2['Título de la Visita'] = df_farmabogota['PACIENTE']
+            
+            # Dirección = DIRECCION DE ENTREGA + CIUDAD DE ENTREGA
+            df_libro2['Dirección'] = df_farmabogota.apply(
+                lambda row: f"{row['DIRECCION DE ENTREGA']}, {row['CIUDAD DE ENTREGA']}",
+                axis=1
+            )
+            
+            # Latitud y Longitud - vacíos por ahora
+            df_libro2['Latitud'] = None
+            df_libro2['Longitud'] = None
+            
+            # ID Referencia = DOCUMENTO ASOCIADO-NUMERO DE PEDIDO
+            df_libro2['ID Referencia'] = df_farmabogota.apply(
+                lambda row: f"{row['DOCUMENTO ASOCIADO']}-{row['NUMERO DE PEDIDO']}" 
+                          if pd.notna(row['NUMERO DE PEDIDO']) else row['DOCUMENTO ASOCIADO'],
+                axis=1
+            )
+            
+            # Notas - vacío
+            df_libro2['Notas'] = ''
+            
+            # Persona de Contacto - vacío
+            df_libro2['Persona de Contacto'] = None
+            
+            # Teléfono = CELULAR (limpiar .0 y validar)
+            df_libro2['Teléfono'] = df_farmabogota['CELULAR'].apply(
+                lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('0', '') != '' else None
+            )
+            
+            # Emails - vacío
+            df_libro2['Emails'] = None
+            
+            print(f"✅ DataFrame Libro2 creado: {len(df_libro2)} registros")
+            
+            # Generar archivo Excel
+            print("💾 Generando archivo Excel formato Libro2...")
+            excel_buffer = BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                df_libro2.to_excel(writer, sheet_name='Hoja1', index=False)
+                
+                # Ajustar anchos de columna
+                workbook = writer.book
+                worksheet = writer.sheets['Hoja1']
+                
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if cell.value and len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 50)
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            excel_buffer.seek(0)
+            excel_data = base64.b64encode(excel_buffer.read()).decode('utf-8')
+            
+            from datetime import datetime
+            fecha_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            return {
+                'success': True,
+                'message': f'Archivo transformado exitosamente. {len(df_libro2)} registros en formato Libro2.',
+                'excel_data': excel_data,
+                'filename': f'Libro2_FarmaBogota_{fecha_actual}.xlsx'
+            }
+            
+        except Exception as e:
+            print(f"❌ Error: {str(e)}")
+            return {
+                'success': False,
+                'error': f'Error al transformar a Libro2: {str(e)}',
+                'details': 'Verifica que el archivo tenga las columnas correctas'
+            }
     
     def _extraer_ciudad_bogota(self, ciudad_ehlpharma, ciudad_ofimatic):
         """
