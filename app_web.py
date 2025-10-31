@@ -1495,8 +1495,11 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             # Nombre Vehiculo = NomMensajero (de ofimatic)
             df_libro2['Nombre Vehiculo'] = df_ofimatic['NomMensajero'] if 'NomMensajero' in df_ofimatic.columns else ''
             
-            # Título de la Visita = NOMBRE (de ofimatic)
-            df_libro2['Título de la Visita'] = df_ofimatic['NOMBRE'] if 'NOMBRE' in df_ofimatic.columns else ''
+            # Título de la Visita = NOMBRE - identificationPatient
+            df_libro2['Título de la Visita'] = df_ofimatic.apply(
+                lambda row: f"{row['NOMBRE']} - {row['nit']}" if 'NOMBRE' in df_ofimatic.columns else row['nit'],
+                axis=1
+            )
             
             # Dirección = addressPatient de madre (si existe) + ", " + ciudad + ", Antioquia"
             # Si no hay dirección de madre, usar DIRECCION de ofimatic
