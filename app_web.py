@@ -1448,11 +1448,39 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 }
             
             # Normalizar tipos de datos
-            df_madre['identificationPatient'] = df_madre['identificationPatient'].astype(str)
-            df_ofimatic['nit'] = df_ofimatic['nit'].astype(str)
+            print("\n🔍 DEBUG: Normalizando NITs...")
+            
+            # Limpiar NITs de la planilla madre: convertir a string, eliminar .0 y espacios
+            df_madre['identificationPatient'] = df_madre['identificationPatient'].apply(
+                lambda x: str(x).replace('.0', '') if pd.notna(x) and str(x).endswith('.0') else str(x)
+            ).str.strip()
+            
+            # Limpiar NITs de la planilla ofimatic: convertir a string y eliminar espacios
+            df_ofimatic['nit'] = df_ofimatic['nit'].astype(str).str.strip()
+            
+            # Mostrar ejemplos de NITs
+            print(f"📋 Ejemplos NITs madre: {df_madre['identificationPatient'].head(10).tolist()}")
+            print(f"📋 Ejemplos NITs ofimatic: {df_ofimatic['nit'].head(10).tolist()}")
+            
+            # Verificar NITs en común
+            nits_madre = set(df_madre['identificationPatient'].unique())
+            nits_ofimatic = set(df_ofimatic['nit'].unique())
+            nits_comunes = nits_madre.intersection(nits_ofimatic)
+            
+            print(f"\n📊 Estadísticas de NITs:")
+            print(f"   - Total NITs únicos en madre: {len(nits_madre)}")
+            print(f"   - Total NITs únicos en ofimatic: {len(nits_ofimatic)}")
+            print(f"   - NITs en común: {len(nits_comunes)}")
+            
+            if len(nits_comunes) > 0:
+                print(f"   - Ejemplos de NITs en común: {list(nits_comunes)[:5]}")
+            else:
+                print("\n⚠️ ¡ADVERTENCIA! No hay NITs en común entre las planillas")
+                print(f"   - Primeros 5 NITs madre: {list(nits_madre)[:5]}")
+                print(f"   - Primeros 5 NITs ofimatic: {list(nits_ofimatic)[:5]}")
             
             # Paso 1: Relacionar por NIT (igual que en Medellín normal)
-            print("🔗 Paso 1: Relacionando por NIT...")
+            print("\n🔗 Paso 1: Relacionando por NIT...")
             mapeo_nit_idorder = df_madre.set_index('identificationPatient')['idOrder'].to_dict()
             
             # Crear diccionarios de mapeo adicionales desde la planilla madre
@@ -1484,7 +1512,17 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 axis=1
             )
             
-            print(f"✅ Relacionados: {(df_ofimatic['idOrder_mapeado'] != '').sum()} de {len(df_ofimatic)} registros")
+            # Contar relacionados (excluyendo strings vacíos y 'nan')
+            relacionados_count = df_ofimatic['idOrder_mapeado'].apply(
+                lambda x: bool(x and str(x).strip() and str(x).lower() != 'nan')
+            ).sum()
+            print(f"✅ Relacionados: {relacionados_count} de {len(df_ofimatic)} registros ({relacionados_count/len(df_ofimatic)*100:.1f}%)")
+            
+            if relacionados_count == 0:
+                print("\n⚠️ ADVERTENCIA: No se encontraron relaciones. Verifica:")
+                print("   1. Que las columnas 'identificationPatient' (madre) y 'nit' (ofimatic) existan")
+                print("   2. Que los NITs tengan el mismo formato en ambas planillas")
+                print("   3. Que haya NITs coincidentes entre ambas planillas")
             
             # Paso 2: Transformar al formato Libro2.xlsx
             print("🔄 Paso 2: Transformando al formato Libro2...")
