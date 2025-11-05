@@ -373,9 +373,55 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             self.process_files()
         elif self.path == '/process_farmabogota_libro2':
             self.process_farmabogota_files()
+        elif self.path == '/process_distrifarma_libro2':
+            self.process_distrifarma_files()
         else:
             self.send_response(404)
             self.end_headers()
+
+    def process_distrifarma_files(self):
+        """Procesa el archivo de Distrifarma y lo transforma a formato Libro2"""
+        import cgi
+        try:
+            # Leer el archivo enviado
+            form = cgi.FieldStorage(
+                fp=self.rfile,
+                headers=self.headers,
+                environ={'REQUEST_METHOD': 'POST',
+                        'CONTENT_TYPE': self.headers['Content-Type']})
+            
+            # Verificar si se recibió el archivo
+            if 'file' not in form:
+                self.send_json_response({
+                    'success': False,
+                    'error': 'No se recibió ningún archivo'
+                })
+                return
+            
+            # Obtener el archivo
+            fileitem = form['file']
+            if not fileitem.filename:
+                self.send_json_response({
+                    'success': False,
+                    'error': 'Archivo no seleccionado'
+                })
+                return
+            
+            # Leer el contenido del archivo
+            file_content = fileitem.file.read()
+            
+            # Procesar el archivo y generar la respuesta
+            response_data = self.process_distrifarma_libro2(file_content, fileitem.filename)
+            
+            # Enviar respuesta
+            self.send_json_response(response_data)
+            
+        except Exception as e:
+            self.send_json_response({
+                'success': False, 
+                'error': f'Error inesperado: {str(e)}',
+                'details': 'Verifica que el archivo tenga el formato correcto'
+            })
 
     def process_farmabogota_files(self):
         """Procesa el archivo de FarmaBogota y lo transforma a formato Libro2"""
@@ -658,6 +704,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 <option value="medellin_libro2">Medellín → Libro2 (Formato Ruteo)</option>
                 <option value="bogota_libro2">Bogotá → Libro2 (Formato Ruteo)</option>
                 <option value="farmabogota_libro2">FarmaBogota → Libro2 (Formato Ruteo)</option>
+                <option value="distrifarma_libro2">Distrifarma → Libro2 (Transformar)</option>
             </select>
         </div>
         
@@ -729,6 +776,18 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 <li><strong>Teléfono:</strong> CELULAR (limpiando .0 y validando)</li>
             </ul>
         </div>
+
+        <div class="info-box" id="infoDistrifarmaLibro2" style="display: none;">
+            <h3>📋 Distrifarma → Libro2 (Transformar):</h3>
+            <ul>
+                <li><strong>Archivo Distrifarma:</strong> Excel con formato Libro2 existente (con columna CEDULA adicional)</li>
+                <li><strong>Proceso:</strong> Transforma y ajusta al formato Libro2.xlsx final</li>
+                <li><strong>Título Visita:</strong> Persona de Contacto + " - " + CEDULA</li>
+                <li><strong>Dirección:</strong> Permanece igual</li>
+                <li><strong>ID Referencia:</strong> "Diswifarma-" + ID Referencia original</li>
+                <li><strong>Resultado:</strong> Excel sin la columna CEDULA, formato Libro2 estándar</li>
+            </ul>
+        </div>
         
         <form id="fileForm">
             <div class="file-section" id="madreSection">
@@ -774,6 +833,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         const infoMedellinLibro2 = document.getElementById('infoMedellinLibro2');
         const infoBogotaLibro2 = document.getElementById('infoBogotaLibro2');
         const infoFarmaBogotaLibro2 = document.getElementById('infoFarmaBogotaLibro2');
+        const infoDistrifarmaLibro2 = document.getElementById('infoDistrifarmaLibro2');
         
         // Cambiar etiquetas y descripciones según el modo
         modoSelector.addEventListener('change', () => {
@@ -827,6 +887,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 infoMedellinLibro2.style.display = 'none';
                 infoBogotaLibro2.style.display = 'block';
                 infoFarmaBogotaLibro2.style.display = 'none';
+                infoDistrifarmaLibro2.style.display = 'none';
                 processBtn.textContent = '3️⃣ ¡GENERAR ARCHIVO LIBRO2 BOGOTÁ!';
                 madreFile.required = true;
                 ofimaticFile.required = true;
@@ -840,7 +901,22 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 infoMedellinLibro2.style.display = 'none';
                 infoBogotaLibro2.style.display = 'none';
                 infoFarmaBogotaLibro2.style.display = 'block';
+                infoDistrifarmaLibro2.style.display = 'none';
                 processBtn.textContent = '2️⃣ ¡GENERAR ARCHIVO LIBRO2 FARMABOGOTA!';
+                madreFile.required = true;
+                ofimaticFile.required = false;
+            } else if (modo === 'distrifarma_libro2') {
+                madreLabel.textContent = '1️⃣ Archivo Distrifarma (.xlsx)';
+                document.getElementById('madreSection').style.display = 'block';
+                document.getElementById('ofimaticSection').style.display = 'none';
+                infoNormal.style.display = 'none';
+                infoBogota.style.display = 'none';
+                infoFiltrarBogota.style.display = 'none';
+                infoMedellinLibro2.style.display = 'none';
+                infoBogotaLibro2.style.display = 'none';
+                infoFarmaBogotaLibro2.style.display = 'none';
+                infoDistrifarmaLibro2.style.display = 'block';
+                processBtn.textContent = '2️⃣ ¡TRANSFORMAR ARCHIVO DISTRIFARMA!';
                 madreFile.required = true;
                 ofimaticFile.required = false;
             } else {
@@ -853,6 +929,8 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 infoFiltrarBogota.style.display = 'none';
                 infoMedellinLibro2.style.display = 'none';
                 infoBogotaLibro2.style.display = 'none';
+                infoFarmaBogotaLibro2.style.display = 'none';
+                infoDistrifarmaLibro2.style.display = 'none';
                 processBtn.textContent = '3️⃣ ¡GENERAR ARCHIVO COMBINADO!';
                 madreFile.required = true;
                 ofimaticFile.required = true;
@@ -890,7 +968,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             const ofimaticReady = ofimaticFile.files.length > 0;
             
             // Modos que solo requieren un archivo
-            if (modo === 'filtrar_bogota' || modo === 'farmabogota_libro2') {
+            if (modo === 'filtrar_bogota' || modo === 'farmabogota_libro2' || modo === 'distrifarma_libro2') {
                 processBtn.disabled = !madreReady;
             } else {
                 // Modos que requieren ambos archivos
@@ -912,7 +990,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             const modo = modoSelector.value;
             
             // Validar según el modo
-            if (modo === 'filtrar_bogota' || modo === 'farmabogota_libro2') {
+            if (modo === 'filtrar_bogota' || modo === 'farmabogota_libro2' || modo === 'distrifarma_libro2') {
                 if (!madreFile.files[0]) {
                     alert('Por favor, selecciona el archivo requerido.');
                     return;
@@ -935,6 +1013,9 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 
                 if (modo === 'farmabogota_libro2') {
                     url = '/process_farmabogota_libro2';
+                    formData.append('file', madreFile.files[0]);
+                } else if (modo === 'distrifarma_libro2') {
+                    url = '/process_distrifarma_libro2';
                     formData.append('file', madreFile.files[0]);
                 } else {
                     formData.append('madre', madreFile.files[0]);
@@ -2244,6 +2325,116 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             return {
                 'success': False,
                 'error': f'Error al transformar a Libro2: {str(e)}',
+                'details': 'Verifica que el archivo tenga las columnas correctas'
+            }
+    
+    def process_distrifarma_libro2(self, distrifarma_content, distrifarma_filename):
+        """
+        Procesa archivo de distrifarma y lo transforma al formato Libro2.xlsx final
+        - Título de la Visita = Persona de Contacto - CEDULA
+        - ID Referencia = Diswifarma-ID_Referencia_original
+        - Quita la columna CEDULA
+        """
+        try:
+            print(f"🔄 [DISTRIFARMA → LIBRO2] Procesando archivo: {distrifarma_filename}")
+            
+            # Leer archivo distrifarma
+            df_distrifarma = leer_excel_inteligente_desde_contenido(distrifarma_content)
+            print(f"✅ Archivo distrifarma leído: {len(df_distrifarma)} filas")
+            print(f"   Columnas disponibles: {list(df_distrifarma.columns)}")
+            
+            # Verificar columnas requeridas
+            required_cols = ['Persona de Contacto', 'CEDULA', 'ID Referencia', 'Dirección']
+            missing_cols = [col for col in required_cols if col not in df_distrifarma.columns]
+            if missing_cols:
+                return {
+                    'success': False,
+                    'error': f'Columnas faltantes en distrifarma: {missing_cols}',
+                    'details': f'Columnas disponibles: {list(df_distrifarma.columns)}'
+                }
+            
+            # Crear DataFrame con estructura de Libro2
+            df_libro2 = pd.DataFrame()
+            
+            # Nombre Vehículo - mantener si existe, sino vacío
+            df_libro2['Nombre Vehiculo'] = df_distrifarma['Nombre Vehiculo'] if 'Nombre Vehiculo' in df_distrifarma.columns else ''
+            
+            # Título de la Visita = Persona de Contacto - CEDULA
+            df_libro2['Título de la Visita'] = df_distrifarma.apply(
+                lambda row: f"{row['Persona de Contacto']} - {row['CEDULA']}" 
+                          if pd.notna(row['Persona de Contacto']) and pd.notna(row['CEDULA'])
+                          else (row['Persona de Contacto'] if pd.notna(row['Persona de Contacto']) else str(row['CEDULA'])),
+                axis=1
+            )
+            
+            # Dirección - permanece igual
+            df_libro2['Dirección'] = df_distrifarma['Dirección']
+            
+            # Latitud y Longitud - mantener si existen
+            df_libro2['Latitud'] = df_distrifarma['Latitud'] if 'Latitud' in df_distrifarma.columns else None
+            df_libro2['Longitud'] = df_distrifarma['Longitud'] if 'Longitud' in df_distrifarma.columns else None
+            
+            # ID Referencia = Diswifarma-ID_Referencia_original
+            df_libro2['ID Referencia'] = df_distrifarma['ID Referencia'].apply(
+                lambda x: f"Diswifarma-{x}" if pd.notna(x) else 'Diswifarma'
+            )
+            
+            # Notas - mantener si existe
+            df_libro2['Notas'] = df_distrifarma['Notas'] if 'Notas' in df_distrifarma.columns else ''
+            
+            # Persona de Contacto - mantener original (sin CEDULA)
+            df_libro2['Persona de Contacto'] = df_distrifarma['Persona de Contacto']
+            
+            # Teléfono - mantener si existe
+            df_libro2['Teléfono'] = df_distrifarma['Teléfono'] if 'Teléfono' in df_distrifarma.columns else None
+            
+            # Emails - mantener si existe
+            df_libro2['Emails'] = df_distrifarma['Emails'] if 'Emails' in df_distrifarma.columns else None
+            
+            # NOTA: No incluimos la columna CEDULA en el resultado final
+            
+            print(f"✅ DataFrame Libro2 creado: {len(df_libro2)} registros")
+            
+            # Generar archivo Excel
+            print("💾 Generando archivo Excel formato Libro2...")
+            excel_buffer = BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                df_libro2.to_excel(writer, sheet_name='Hoja1', index=False)
+                
+                # Ajustar anchos de columna
+                workbook = writer.book
+                worksheet = writer.sheets['Hoja1']
+                
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if cell.value and len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 50)
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            excel_buffer.seek(0)
+            excel_data = base64.b64encode(excel_buffer.read()).decode('utf-8')
+            
+            from datetime import datetime
+            fecha_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            return {
+                'success': True,
+                'message': f'Archivo transformado exitosamente. {len(df_libro2)} registros en formato Libro2.',
+                'excel_data': excel_data,
+                'filename': f'Libro2_Distrifarma_{fecha_actual}.xlsx'
+            }
+            
+        except Exception as e:
+            print(f"❌ Error: {str(e)}")
+            return {
+                'success': False,
+                'error': f'Error al transformar Distrifarma a Libro2: {str(e)}',
                 'details': 'Verifica que el archivo tenga las columnas correctas'
             }
     
