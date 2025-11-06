@@ -780,12 +780,13 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         <div class="info-box" id="infoDistrifarmaLibro2" style="display: none;">
             <h3>📋 Distrifarma → Libro2 (Transformar):</h3>
             <ul>
-                <li><strong>Archivo Distrifarma:</strong> Excel con formato Libro2 existente (con columna CEDULA adicional)</li>
+                <li><strong>Archivo Distrifarma:</strong> Excel con formato Libro2 existente (con columnas CEDULA e INTEGRADOS adicionales)</li>
                 <li><strong>Proceso:</strong> Transforma y ajusta al formato Libro2.xlsx final</li>
                 <li><strong>Título Visita:</strong> Persona de Contacto + " - " + CEDULA</li>
                 <li><strong>Dirección:</strong> Permanece igual</li>
                 <li><strong>ID Referencia:</strong> "Diswifarma-" + ID Referencia original</li>
-                <li><strong>Resultado:</strong> Excel sin la columna CEDULA, formato Libro2 estándar</li>
+                <li><strong>Notas:</strong> Valor de columna INTEGRADOS</li>
+                <li><strong>Resultado:</strong> Excel sin las columnas CEDULA e INTEGRADOS, formato Libro2 estándar</li>
             </ul>
         </div>
         
@@ -2333,25 +2334,61 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         Procesa archivo de distrifarma y lo transforma al formato Libro2.xlsx final
         - Título de la Visita = Persona de Contacto - CEDULA
         - ID Referencia = Diswifarma-ID_Referencia_original
-        - Quita la columna CEDULA
+        - Notas = INTEGRADOS (si existe)
+        - Quita las columnas CEDULA e INTEGRADOS
         """
         try:
             print(f"🔄 [DISTRIFARMA → LIBRO2] Procesando archivo: {distrifarma_filename}")
             
-            # Leer archivo distrifarma
-            df_distrifarma = leer_excel_inteligente_desde_contenido(distrifarma_content)
+            # Leer archivo distrifarma SIN encabezados (header=None)
+            df_distrifarma = pd.read_excel(BytesIO(distrifarma_content), header=None)
             print(f"✅ Archivo distrifarma leído: {len(df_distrifarma)} filas")
-            print(f"   Columnas disponibles: {list(df_distrifarma.columns)}")
+            print(f"   Primeras 10 filas sin procesar:")
+            for idx in range(min(10, len(df_distrifarma))):
+                print(f"      Fila {idx}: {df_distrifarma.iloc[idx].tolist()}")
             
-            # Verificar columnas requeridas
-            required_cols = ['Persona de Contacto', 'CEDULA', 'ID Referencia', 'Dirección']
-            missing_cols = [col for col in required_cols if col not in df_distrifarma.columns]
-            if missing_cols:
-                return {
-                    'success': False,
-                    'error': f'Columnas faltantes en distrifarma: {missing_cols}',
-                    'details': f'Columnas disponibles: {list(df_distrifarma.columns)}'
-                }
+            # Encontrar la fila donde empiezan los datos reales
+            # Los datos reales tienen valores en la mayoría de las columnas
+            fila_inicio_datos = 0
+            for idx in range(len(df_distrifarma)):
+                fila = df_distrifarma.iloc[idx]
+                # Contar cuántas celdas tienen valores no nulos
+                valores_no_nulos = fila.notna().sum()
+                # Verificar si NO es una fila de encabezados (no contiene palabras clave)
+                es_fila_encabezados = any(
+                    pd.notna(celda) and any(palabra in str(celda) for palabra in 
+                    ['Nombre Vehiculo', 'Titulo de la Visita', 'Dirección', 'Persona de Contacto', 'CEDULA', 'ID Referencia'])
+                    for celda in fila
+                )
+                
+                # Si tiene suficientes valores (al menos 5) y NO es fila de encabezados, es el inicio de datos
+                if valores_no_nulos >= 5 and not es_fila_encabezados:
+                    fila_inicio_datos = idx
+                    print(f"   ✅ Datos reales comienzan en fila {idx}")
+                    break
+            
+            # Eliminar todas las filas anteriores a los datos reales
+            if fila_inicio_datos > 0:
+                print(f"   🗑️ Eliminando {fila_inicio_datos} filas antes de los datos...")
+                df_distrifarma = df_distrifarma.iloc[fila_inicio_datos:].reset_index(drop=True)
+                print(f"   Filas restantes: {len(df_distrifarma)}")
+            
+            # Asignar nombres de columnas manualmente según el orden esperado
+            # Orden: Nombre Vehiculo, Titulo de la Visita, Dirección, ID Referencia, Persona de Contacto, CEDULA, Teléfono, INTEGRADOS
+            column_names = ['Nombre Vehiculo', 'Titulo de la Visita', 'Dirección', 'ID Referencia', 
+                           'Persona de Contacto', 'CEDULA', 'Teléfono', 'INTEGRADOS']
+            
+            # Si el archivo tiene menos columnas, ajustar
+            num_cols = len(df_distrifarma.columns)
+            if num_cols < len(column_names):
+                column_names = column_names[:num_cols]
+                print(f"⚠️ Archivo tiene {num_cols} columnas, usando solo: {column_names}")
+            
+            df_distrifarma.columns = column_names[:num_cols]
+            
+            print(f"   Columnas asignadas: {list(df_distrifarma.columns)}")
+            print(f"   Ejemplo de datos procesados:")
+            print(f"      {df_distrifarma[['Persona de Contacto', 'CEDULA', 'ID Referencia']].head(3).to_string()}")
             
             # Crear DataFrame con estructura de Libro2
             df_libro2 = pd.DataFrame()
@@ -2374,13 +2411,35 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             df_libro2['Latitud'] = df_distrifarma['Latitud'] if 'Latitud' in df_distrifarma.columns else None
             df_libro2['Longitud'] = df_distrifarma['Longitud'] if 'Longitud' in df_distrifarma.columns else None
             
-            # ID Referencia = Diswifarma-ID_Referencia_original
-            df_libro2['ID Referencia'] = df_distrifarma['ID Referencia'].apply(
-                lambda x: f"Diswifarma-{x}" if pd.notna(x) else 'Diswifarma'
-            )
+            # ID Referencia - Lógica especial:
+            # Si el ID contiene letras Y números, usar solo el ID original (sin prefijo)
+            # Si el ID es solo números, agregar prefijo "Diswifarma-"
+            def procesar_id_referencia(id_ref):
+                if pd.isna(id_ref):
+                    return 'Diswifarma'
+                
+                id_str = str(id_ref).strip()
+                
+                # Verificar si contiene letras
+                tiene_letras = any(c.isalpha() for c in id_str)
+                tiene_numeros = any(c.isdigit() for c in id_str)
+                
+                # Si tiene letras y números, usar solo el ID original (sin prefijo)
+                if tiene_letras and tiene_numeros:
+                    return id_str
+                # Si es solo números, agregar prefijo
+                else:
+                    return f"Diswifarma-{id_str}"
             
-            # Notas - mantener si existe
-            df_libro2['Notas'] = df_distrifarma['Notas'] if 'Notas' in df_distrifarma.columns else ''
+            df_libro2['ID Referencia'] = df_distrifarma['ID Referencia'].apply(procesar_id_referencia)
+            
+            # Notas = INTEGRADOS si existe, sino usar campo Notas original, sino vacío
+            if 'INTEGRADOS' in df_distrifarma.columns:
+                df_libro2['Notas'] = df_distrifarma['INTEGRADOS']
+            elif 'Notas' in df_distrifarma.columns:
+                df_libro2['Notas'] = df_distrifarma['Notas']
+            else:
+                df_libro2['Notas'] = ''
             
             # Persona de Contacto - mantener original (sin CEDULA)
             df_libro2['Persona de Contacto'] = df_distrifarma['Persona de Contacto']
@@ -2391,9 +2450,14 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             # Emails - mantener si existe
             df_libro2['Emails'] = df_distrifarma['Emails'] if 'Emails' in df_distrifarma.columns else None
             
-            # NOTA: No incluimos la columna CEDULA en el resultado final
+            # NOTA: No incluimos las columnas CEDULA ni INTEGRADOS en el resultado final
             
             print(f"✅ DataFrame Libro2 creado: {len(df_libro2)} registros")
+            print(f"   Columnas en Libro2: {list(df_libro2.columns)}")
+            print(f"   Ejemplo de IDs procesados:")
+            for idx in range(min(3, len(df_libro2))):
+                print(f"      {idx+1}. Título: {df_libro2.iloc[idx]['Título de la Visita']}")
+                print(f"         ID Ref: {df_libro2.iloc[idx]['ID Referencia']}")
             
             # Generar archivo Excel
             print("💾 Generando archivo Excel formato Libro2...")
