@@ -742,7 +742,8 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         <div class="info-box" id="infoMedellinLibro2" style="display: none;">
             <h3>📋 Medellín → Libro2 (Formato Ruteo):</h3>
             <ul>
-                <li><strong>Planilla Madre:</strong> Excel con datos de Medellín (identificationPatient, idOrder, addressPatient, phonePatient, cityNameOrder)</li>
+                <li><strong>Planilla Madre:</strong> CSV o Excel con datos de Medellín (identificationPatient, idOrder, addressPatient, phonePatient, cityNameOrder)</li>
+                <li><strong>Formatos CSV:</strong> Detecta automáticamente codificación (UTF-8, Latin-1, etc.) y delimitador (,  ;  ó tab)</li>
                 <li><strong>Planilla Ofimatic:</strong> PLANILLAS OFMATIC BOGOTA.xlsx (con nit, Nrodcto, NOMBRE, DIRECCION, TEL1, TEL2, TipoVta, Destino)</li>
                 <li><strong>Proceso:</strong> Relaciona por NIT y transforma al formato Libro2.xlsx para ruteo</li>
                 <li><strong>Resultado:</strong> Excel con formato: Nombre Vehículo, Título de la Visita, Dirección, ID Referencia, Notas, Teléfono</li>
@@ -865,7 +866,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 madreFile.required = true;
                 ofimaticFile.required = false;
             } else if (modo === 'medellin_libro2') {
-                madreLabel.textContent = '1️⃣ Planilla Madre Medellín (.xlsx)';
+                madreLabel.textContent = '1️⃣ Planilla Madre Medellín (.csv/.xlsx)';
                 ofimaticLabel.textContent = '2️⃣ Planilla Ofimatic (.xlsx)';
                 document.getElementById('madreSection').style.display = 'block';
                 document.getElementById('ofimaticSection').style.display = 'block';
@@ -1493,12 +1494,47 @@ class MailboxHandler(SimpleHTTPRequestHandler):
     def process_medellin_libro2(self, madre_content, madre_filename, ofimatic_content, ofimatic_filename):
         """
         Procesa archivos de Medellín (madre + ofimatic) y los transforma al formato Libro2.xlsx
+        Soporta CSV y Excel para la planilla madre
         """
         try:
             print(f"🔄 [MEDELLÍN → LIBRO2] Procesando archivos: {madre_filename} y {ofimatic_filename}")
             
-            # Leer planilla madre
-            df_madre = leer_excel_inteligente_desde_contenido(madre_content)
+            # Leer planilla madre - detectar si es CSV o Excel
+            madre_extension = os.path.splitext(madre_filename)[1].lower()
+            
+            if madre_extension == '.csv':
+                print("📄 Detectado archivo CSV para planilla madre")
+                # Intentar diferentes codificaciones y delimitadores
+                codificaciones = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
+                delimitadores = [',', ';', '\t']
+                
+                df_madre = None
+                for encoding in codificaciones:
+                    if df_madre is not None:
+                        break
+                    for delim in delimitadores:
+                        try:
+                            texto = madre_content.decode(encoding)
+                            df_test = pd.read_csv(StringIO(texto), delimiter=delim)
+                            
+                            # Verificar si tiene columnas conocidas de madre
+                            if 'identificationPatient' in df_test.columns and 'idOrder' in df_test.columns:
+                                df_madre = df_test
+                                print(f"✅ CSV leído correctamente con encoding={encoding}, delimitador='{delim}'")
+                                break
+                        except Exception as e:
+                            continue
+                
+                if df_madre is None:
+                    return {
+                        'success': False,
+                        'error': 'No se pudo leer el archivo CSV de planilla madre',
+                        'details': 'Verifica que el archivo tenga las columnas identificationPatient e idOrder'
+                    }
+            else:
+                # Usar la función existente para Excel
+                df_madre = leer_excel_inteligente_desde_contenido(madre_content)
+            
             print(f"✅ Planilla madre leída: {len(df_madre)} filas")
             print(f"   Columnas disponibles: {list(df_madre.columns)}")
             
