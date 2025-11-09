@@ -371,9 +371,101 @@ class MailboxHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/process':
             self.process_files()
+        elif self.path == '/process_farmabogota_libro2':
+            self.process_farmabogota_files()
+        elif self.path == '/process_distrifarma_libro2':
+            self.process_distrifarma_files()
         else:
             self.send_response(404)
             self.end_headers()
+
+    def process_distrifarma_files(self):
+        """Procesa el archivo de Distrifarma y lo transforma a formato Libro2"""
+        import cgi
+        try:
+            # Leer el archivo enviado
+            form = cgi.FieldStorage(
+                fp=self.rfile,
+                headers=self.headers,
+                environ={'REQUEST_METHOD': 'POST',
+                        'CONTENT_TYPE': self.headers['Content-Type']})
+            
+            # Verificar si se recibió el archivo
+            if 'file' not in form:
+                self.send_json_response({
+                    'success': False,
+                    'error': 'No se recibió ningún archivo'
+                })
+                return
+            
+            # Obtener el archivo
+            fileitem = form['file']
+            if not fileitem.filename:
+                self.send_json_response({
+                    'success': False,
+                    'error': 'Archivo no seleccionado'
+                })
+                return
+            
+            # Leer el contenido del archivo
+            file_content = fileitem.file.read()
+            
+            # Procesar el archivo y generar la respuesta
+            response_data = self.process_distrifarma_libro2(file_content, fileitem.filename)
+            
+            # Enviar respuesta
+            self.send_json_response(response_data)
+            
+        except Exception as e:
+            self.send_json_response({
+                'success': False, 
+                'error': f'Error inesperado: {str(e)}',
+                'details': 'Verifica que el archivo tenga el formato correcto'
+            })
+
+    def process_farmabogota_files(self):
+        """Procesa el archivo de FarmaBogota y lo transforma a formato Libro2"""
+        import cgi
+        try:
+            # Leer el archivo enviado
+            form = cgi.FieldStorage(
+                fp=self.rfile,
+                headers=self.headers,
+                environ={'REQUEST_METHOD': 'POST',
+                        'CONTENT_TYPE': self.headers['Content-Type']})
+            
+            # Verificar si se recibió el archivo
+            if 'file' not in form:
+                self.send_json_response({
+                    'success': False,
+                    'error': 'No se recibió ningún archivo'
+                })
+                return
+            
+            # Obtener el archivo
+            fileitem = form['file']
+            if not fileitem.filename:
+                self.send_json_response({
+                    'success': False,
+                    'error': 'Archivo no seleccionado'
+                })
+                return
+            
+            # Leer el contenido del archivo
+            file_content = fileitem.file.read()
+            
+            # Procesar el archivo y generar la respuesta
+            response_data = self.process_farmabogota_libro2(file_content, fileitem.filename)
+            
+            # Enviar respuesta
+            self.send_json_response(response_data)
+            
+        except Exception as e:
+            self.send_json_response({
+                'success': False, 
+                'error': f'Error inesperado: {str(e)}',
+                'details': 'Verifica que el archivo tenga el formato correcto'
+            })
     
     def send_html_app(self):
         html_content = """
@@ -611,6 +703,8 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 <option value="filtrar_bogota">Filtrar Bogotá (Solo B-BOGOTA y B-SOACHA)</option>
                 <option value="medellin_libro2">Medellín → Libro2 (Formato Ruteo)</option>
                 <option value="bogota_libro2">Bogotá → Libro2 (Formato Ruteo)</option>
+                <option value="farmabogota_libro2">FarmaBogota → Libro2 (Formato Ruteo)</option>
+                <option value="distrifarma_libro2">Distrifarma → Libro2 (Transformar)</option>
             </select>
         </div>
         
@@ -648,7 +742,8 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         <div class="info-box" id="infoMedellinLibro2" style="display: none;">
             <h3>📋 Medellín → Libro2 (Formato Ruteo):</h3>
             <ul>
-                <li><strong>Planilla Madre:</strong> Excel con datos de Medellín (identificationPatient, idOrder, addressPatient, phonePatient, cityNameOrder)</li>
+                <li><strong>Planilla Madre:</strong> CSV o Excel con datos de Medellín (identificationPatient, idOrder, addressPatient, phonePatient, cityNameOrder)</li>
+                <li><strong>Formatos CSV:</strong> Detecta automáticamente codificación (UTF-8, Latin-1, etc.) y delimitador (,  ;  ó tab)</li>
                 <li><strong>Planilla Ofimatic:</strong> PLANILLAS OFMATIC BOGOTA.xlsx (con nit, Nrodcto, NOMBRE, DIRECCION, TEL1, TEL2, TipoVta, Destino)</li>
                 <li><strong>Proceso:</strong> Relaciona por NIT y transforma al formato Libro2.xlsx para ruteo</li>
                 <li><strong>Resultado:</strong> Excel con formato: Nombre Vehículo, Título de la Visita, Dirección, ID Referencia, Notas, Teléfono</li>
@@ -667,6 +762,32 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 <li><strong>Ciudad Entrega:</strong> Extrae de "Zipaquirá-Cundinamarca-Colombia" → "ZIPAQUIRA"</li>
                 <li><strong>Dirección:</strong> DIRECCION DE ENTREGA de ehlpharma + ", " + ciudad + ", Cundinamarca"</li>
                 <li><strong>Teléfono:</strong> CELULAR de ehlpharma, sino TEL1 o TEL2 de ofimatic</li>
+            </ul>
+        </div>
+
+        <div class="info-box" id="infoFarmaBogotaLibro2" style="display: none;">
+            <h3>📋 FarmaBogota → Libro2 (Formato Ruteo):</h3>
+            <ul>
+                <li><strong>Archivo FarmaBogota:</strong> Excel con columnas PACIENTE, NUMERO DE PEDIDO, DIRECCION DE ENTREGA, CELULAR, CIUDAD DE ENTREGA, DOCUMENTO ASOCIADO</li>
+                <li><strong>Proceso:</strong> Transforma al formato Libro2.xlsx para ruteo</li>
+                <li><strong>Resultado:</strong> Excel con formato: Nombre Vehículo, Título de la Visita, Dirección, ID Referencia, Teléfono, etc.</li>
+                <li><strong>Título Visita:</strong> Campo PACIENTE</li>
+                <li><strong>Dirección:</strong> DIRECCION DE ENTREGA + ", " + CIUDAD DE ENTREGA</li>
+                <li><strong>ID Referencia:</strong> DOCUMENTO ASOCIADO + "-" + NUMERO DE PEDIDO</li>
+                <li><strong>Teléfono:</strong> CELULAR (limpiando .0 y validando)</li>
+            </ul>
+        </div>
+
+        <div class="info-box" id="infoDistrifarmaLibro2" style="display: none;">
+            <h3>📋 Distrifarma → Libro2 (Transformar):</h3>
+            <ul>
+                <li><strong>Archivo Distrifarma:</strong> Excel con formato Libro2 existente (con columnas CEDULA e INTEGRADOS adicionales)</li>
+                <li><strong>Proceso:</strong> Transforma y ajusta al formato Libro2.xlsx final</li>
+                <li><strong>Título Visita:</strong> Persona de Contacto + " - " + CEDULA</li>
+                <li><strong>Dirección:</strong> Permanece igual</li>
+                <li><strong>ID Referencia:</strong> "Diswifarma-" + ID Referencia original</li>
+                <li><strong>Notas:</strong> Valor de columna INTEGRADOS</li>
+                <li><strong>Resultado:</strong> Excel sin las columnas CEDULA e INTEGRADOS, formato Libro2 estándar</li>
             </ul>
         </div>
         
@@ -713,6 +834,8 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         const infoFiltrarBogota = document.getElementById('infoFiltrarBogota');
         const infoMedellinLibro2 = document.getElementById('infoMedellinLibro2');
         const infoBogotaLibro2 = document.getElementById('infoBogotaLibro2');
+        const infoFarmaBogotaLibro2 = document.getElementById('infoFarmaBogotaLibro2');
+        const infoDistrifarmaLibro2 = document.getElementById('infoDistrifarmaLibro2');
         
         // Cambiar etiquetas y descripciones según el modo
         modoSelector.addEventListener('change', () => {
@@ -743,7 +866,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 madreFile.required = true;
                 ofimaticFile.required = false;
             } else if (modo === 'medellin_libro2') {
-                madreLabel.textContent = '1️⃣ Planilla Madre Medellín (.xlsx)';
+                madreLabel.textContent = '1️⃣ Planilla Madre Medellín (.csv/.xlsx)';
                 ofimaticLabel.textContent = '2️⃣ Planilla Ofimatic (.xlsx)';
                 document.getElementById('madreSection').style.display = 'block';
                 document.getElementById('ofimaticSection').style.display = 'block';
@@ -765,9 +888,39 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 infoFiltrarBogota.style.display = 'none';
                 infoMedellinLibro2.style.display = 'none';
                 infoBogotaLibro2.style.display = 'block';
+                infoFarmaBogotaLibro2.style.display = 'none';
+                infoDistrifarmaLibro2.style.display = 'none';
                 processBtn.textContent = '3️⃣ ¡GENERAR ARCHIVO LIBRO2 BOGOTÁ!';
                 madreFile.required = true;
                 ofimaticFile.required = true;
+            } else if (modo === 'farmabogota_libro2') {
+                madreLabel.textContent = '1️⃣ Planilla FarmaBogota (.xlsx)';
+                document.getElementById('madreSection').style.display = 'block';
+                document.getElementById('ofimaticSection').style.display = 'none';
+                infoNormal.style.display = 'none';
+                infoBogota.style.display = 'none';
+                infoFiltrarBogota.style.display = 'none';
+                infoMedellinLibro2.style.display = 'none';
+                infoBogotaLibro2.style.display = 'none';
+                infoFarmaBogotaLibro2.style.display = 'block';
+                infoDistrifarmaLibro2.style.display = 'none';
+                processBtn.textContent = '2️⃣ ¡GENERAR ARCHIVO LIBRO2 FARMABOGOTA!';
+                madreFile.required = true;
+                ofimaticFile.required = false;
+            } else if (modo === 'distrifarma_libro2') {
+                madreLabel.textContent = '1️⃣ Archivo Distrifarma (.xlsx)';
+                document.getElementById('madreSection').style.display = 'block';
+                document.getElementById('ofimaticSection').style.display = 'none';
+                infoNormal.style.display = 'none';
+                infoBogota.style.display = 'none';
+                infoFiltrarBogota.style.display = 'none';
+                infoMedellinLibro2.style.display = 'none';
+                infoBogotaLibro2.style.display = 'none';
+                infoFarmaBogotaLibro2.style.display = 'none';
+                infoDistrifarmaLibro2.style.display = 'block';
+                processBtn.textContent = '2️⃣ ¡TRANSFORMAR ARCHIVO DISTRIFARMA!';
+                madreFile.required = true;
+                ofimaticFile.required = false;
             } else {
                 madreLabel.textContent = '1️⃣ Planilla Madre (.csv/.xlsx/.xls)';
                 ofimaticLabel.textContent = '2️⃣ Planilla Ofimatic (.csv/.xlsx/.xls)';
@@ -778,6 +931,8 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 infoFiltrarBogota.style.display = 'none';
                 infoMedellinLibro2.style.display = 'none';
                 infoBogotaLibro2.style.display = 'none';
+                infoFarmaBogotaLibro2.style.display = 'none';
+                infoDistrifarmaLibro2.style.display = 'none';
                 processBtn.textContent = '3️⃣ ¡GENERAR ARCHIVO COMBINADO!';
                 madreFile.required = true;
                 ofimaticFile.required = true;
@@ -814,9 +969,11 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             const madreReady = madreFile.files.length > 0;
             const ofimaticReady = ofimaticFile.files.length > 0;
             
-            if (modo === 'filtrar_bogota') {
+            // Modos que solo requieren un archivo
+            if (modo === 'filtrar_bogota' || modo === 'farmabogota_libro2' || modo === 'distrifarma_libro2') {
                 processBtn.disabled = !madreReady;
             } else {
+                // Modos que requieren ambos archivos
                 processBtn.disabled = !(madreReady && ofimaticReady);
             }
         }
@@ -835,9 +992,9 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             const modo = modoSelector.value;
             
             // Validar según el modo
-            if (modo === 'filtrar_bogota') {
+            if (modo === 'filtrar_bogota' || modo === 'farmabogota_libro2' || modo === 'distrifarma_libro2') {
                 if (!madreFile.files[0]) {
-                    alert('Por favor, selecciona el archivo de planilla Ofimatic Bogotá.');
+                    alert('Por favor, selecciona el archivo requerido.');
                     return;
                 }
             } else {
@@ -853,14 +1010,24 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             result.style.display = 'none';
             
             try {
+                let url = '/process';
                 const formData = new FormData();
-                formData.append('madre', madreFile.files[0]);
-                if (modo !== 'filtrar_bogota' && ofimaticFile.files[0]) {
-                    formData.append('ofimatic', ofimaticFile.files[0]);
-                }
-                formData.append('modo', modo);
                 
-                const response = await fetch('/process', {
+                if (modo === 'farmabogota_libro2') {
+                    url = '/process_farmabogota_libro2';
+                    formData.append('file', madreFile.files[0]);
+                } else if (modo === 'distrifarma_libro2') {
+                    url = '/process_distrifarma_libro2';
+                    formData.append('file', madreFile.files[0]);
+                } else {
+                    formData.append('madre', madreFile.files[0]);
+                    if (modo !== 'filtrar_bogota' && ofimaticFile.files[0]) {
+                        formData.append('ofimatic', ofimaticFile.files[0]);
+                    }
+                    formData.append('modo', modo);
+                }
+                
+                const response = await fetch(url, {
                     method: 'POST',
                     body: formData
                 });
@@ -1327,12 +1494,47 @@ class MailboxHandler(SimpleHTTPRequestHandler):
     def process_medellin_libro2(self, madre_content, madre_filename, ofimatic_content, ofimatic_filename):
         """
         Procesa archivos de Medellín (madre + ofimatic) y los transforma al formato Libro2.xlsx
+        Soporta CSV y Excel para la planilla madre
         """
         try:
             print(f"🔄 [MEDELLÍN → LIBRO2] Procesando archivos: {madre_filename} y {ofimatic_filename}")
             
-            # Leer planilla madre
-            df_madre = leer_excel_inteligente_desde_contenido(madre_content)
+            # Leer planilla madre - detectar si es CSV o Excel
+            madre_extension = os.path.splitext(madre_filename)[1].lower()
+            
+            if madre_extension == '.csv':
+                print("📄 Detectado archivo CSV para planilla madre")
+                # Intentar diferentes codificaciones y delimitadores
+                codificaciones = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
+                delimitadores = [',', ';', '\t']
+                
+                df_madre = None
+                for encoding in codificaciones:
+                    if df_madre is not None:
+                        break
+                    for delim in delimitadores:
+                        try:
+                            texto = madre_content.decode(encoding)
+                            df_test = pd.read_csv(StringIO(texto), delimiter=delim)
+                            
+                            # Verificar si tiene columnas conocidas de madre
+                            if 'identificationPatient' in df_test.columns and 'idOrder' in df_test.columns:
+                                df_madre = df_test
+                                print(f"✅ CSV leído correctamente con encoding={encoding}, delimitador='{delim}'")
+                                break
+                        except Exception as e:
+                            continue
+                
+                if df_madre is None:
+                    return {
+                        'success': False,
+                        'error': 'No se pudo leer el archivo CSV de planilla madre',
+                        'details': 'Verifica que el archivo tenga las columnas identificationPatient e idOrder'
+                    }
+            else:
+                # Usar la función existente para Excel
+                df_madre = leer_excel_inteligente_desde_contenido(madre_content)
+            
             print(f"✅ Planilla madre leída: {len(df_madre)} filas")
             print(f"   Columnas disponibles: {list(df_madre.columns)}")
             
@@ -1364,11 +1566,39 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 }
             
             # Normalizar tipos de datos
-            df_madre['identificationPatient'] = df_madre['identificationPatient'].astype(str)
-            df_ofimatic['nit'] = df_ofimatic['nit'].astype(str)
+            print("\n🔍 DEBUG: Normalizando NITs...")
+            
+            # Limpiar NITs de la planilla madre: convertir a string, eliminar .0 y espacios
+            df_madre['identificationPatient'] = df_madre['identificationPatient'].apply(
+                lambda x: str(x).replace('.0', '') if pd.notna(x) and str(x).endswith('.0') else str(x)
+            ).str.strip()
+            
+            # Limpiar NITs de la planilla ofimatic: convertir a string y eliminar espacios
+            df_ofimatic['nit'] = df_ofimatic['nit'].astype(str).str.strip()
+            
+            # Mostrar ejemplos de NITs
+            print(f"📋 Ejemplos NITs madre: {df_madre['identificationPatient'].head(10).tolist()}")
+            print(f"📋 Ejemplos NITs ofimatic: {df_ofimatic['nit'].head(10).tolist()}")
+            
+            # Verificar NITs en común
+            nits_madre = set(df_madre['identificationPatient'].unique())
+            nits_ofimatic = set(df_ofimatic['nit'].unique())
+            nits_comunes = nits_madre.intersection(nits_ofimatic)
+            
+            print(f"\n📊 Estadísticas de NITs:")
+            print(f"   - Total NITs únicos en madre: {len(nits_madre)}")
+            print(f"   - Total NITs únicos en ofimatic: {len(nits_ofimatic)}")
+            print(f"   - NITs en común: {len(nits_comunes)}")
+            
+            if len(nits_comunes) > 0:
+                print(f"   - Ejemplos de NITs en común: {list(nits_comunes)[:5]}")
+            else:
+                print("\n⚠️ ¡ADVERTENCIA! No hay NITs en común entre las planillas")
+                print(f"   - Primeros 5 NITs madre: {list(nits_madre)[:5]}")
+                print(f"   - Primeros 5 NITs ofimatic: {list(nits_ofimatic)[:5]}")
             
             # Paso 1: Relacionar por NIT (igual que en Medellín normal)
-            print("🔗 Paso 1: Relacionando por NIT...")
+            print("\n🔗 Paso 1: Relacionando por NIT...")
             mapeo_nit_idorder = df_madre.set_index('identificationPatient')['idOrder'].to_dict()
             
             # Crear diccionarios de mapeo adicionales desde la planilla madre
@@ -1400,7 +1630,17 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 axis=1
             )
             
-            print(f"✅ Relacionados: {(df_ofimatic['idOrder_mapeado'] != '').sum()} de {len(df_ofimatic)} registros")
+            # Contar relacionados (excluyendo strings vacíos y 'nan')
+            relacionados_count = df_ofimatic['idOrder_mapeado'].apply(
+                lambda x: bool(x and str(x).strip() and str(x).lower() != 'nan')
+            ).sum()
+            print(f"✅ Relacionados: {relacionados_count} de {len(df_ofimatic)} registros ({relacionados_count/len(df_ofimatic)*100:.1f}%)")
+            
+            if relacionados_count == 0:
+                print("\n⚠️ ADVERTENCIA: No se encontraron relaciones. Verifica:")
+                print("   1. Que las columnas 'identificationPatient' (madre) y 'nit' (ofimatic) existan")
+                print("   2. Que los NITs tengan el mismo formato en ambas planillas")
+                print("   3. Que haya NITs coincidentes entre ambas planillas")
             
             # Paso 2: Transformar al formato Libro2.xlsx
             print("🔄 Paso 2: Transformando al formato Libro2...")
@@ -1411,8 +1651,11 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             # Nombre Vehiculo = NomMensajero (de ofimatic)
             df_libro2['Nombre Vehiculo'] = df_ofimatic['NomMensajero'] if 'NomMensajero' in df_ofimatic.columns else ''
             
-            # Título de la Visita = NOMBRE (de ofimatic)
-            df_libro2['Título de la Visita'] = df_ofimatic['NOMBRE'] if 'NOMBRE' in df_ofimatic.columns else ''
+            # Título de la Visita = NOMBRE - identificationPatient
+            df_libro2['Título de la Visita'] = df_ofimatic.apply(
+                lambda row: f"{row['NOMBRE']} - {row['nit']}" if 'NOMBRE' in df_ofimatic.columns else row['nit'],
+                axis=1
+            )
             
             # Dirección = addressPatient de madre (si existe) + ", " + ciudad + ", Antioquia"
             # Si no hay dirección de madre, usar DIRECCION de ofimatic
@@ -2011,6 +2254,289 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             return f"{ciudad}, Cundinamarca"
         else:
             return "Cundinamarca"
+
+    def process_farmabogota_libro2(self, farmabogota_content, farmabogota_filename):
+        """
+        Procesa archivo de farmabogota y lo transforma al formato Libro2.xlsx
+        """
+        try:
+            print(f"🔄 [FARMABOGOTA → LIBRO2] Procesando archivo: {farmabogota_filename}")
+            
+            # Leer archivo farmabogota
+            df_farmabogota = leer_excel_inteligente_desde_contenido(farmabogota_content)
+            print(f"✅ Archivo farmabogota leído: {len(df_farmabogota)} filas")
+            print(f"   Columnas disponibles: {list(df_farmabogota.columns)}")
+            
+            # Verificar columnas requeridas
+            required_cols = ['NUMERO DE PEDIDO', 'PACIENTE', 'IDENTIFICACION', 
+                           'CIUDAD DE ENTREGA', 'DIRECCION DE ENTREGA', 'CELULAR',
+                           'DOCUMENTO ASOCIADO']
+                           
+            missing_cols = [col for col in required_cols if col not in df_farmabogota.columns]
+            if missing_cols:
+                return {
+                    'success': False,
+                    'error': f'Columnas faltantes en farmabogota: {missing_cols}',
+                    'details': f'Columnas disponibles: {list(df_farmabogota.columns)}'
+                }
+                
+            # Crear DataFrame con estructura de Libro2
+            df_libro2 = pd.DataFrame()
+            
+            # Nombre Vehículo - vacío por ahora
+            df_libro2['Nombre Vehiculo'] = ''
+            
+            # Título de la Visita = PACIENTE
+            df_libro2['Título de la Visita'] = df_farmabogota['PACIENTE']
+            
+            # Dirección = DIRECCION DE ENTREGA + CIUDAD DE ENTREGA
+            df_libro2['Dirección'] = df_farmabogota.apply(
+                lambda row: f"{row['DIRECCION DE ENTREGA']}, {row['CIUDAD DE ENTREGA']}",
+                axis=1
+            )
+            
+            # Latitud y Longitud - vacíos por ahora
+            df_libro2['Latitud'] = None
+            df_libro2['Longitud'] = None
+            
+            # ID Referencia = DOCUMENTO ASOCIADO-NUMERO DE PEDIDO
+            df_libro2['ID Referencia'] = df_farmabogota.apply(
+                lambda row: f"{row['DOCUMENTO ASOCIADO']}-{row['NUMERO DE PEDIDO']}" 
+                          if pd.notna(row['NUMERO DE PEDIDO']) else row['DOCUMENTO ASOCIADO'],
+                axis=1
+            )
+            
+            # Notas - vacío
+            df_libro2['Notas'] = ''
+            
+            # Persona de Contacto - vacío
+            df_libro2['Persona de Contacto'] = None
+            
+            # Teléfono = CELULAR (limpiar .0 y validar)
+            df_libro2['Teléfono'] = df_farmabogota['CELULAR'].apply(
+                lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('0', '') != '' else None
+            )
+            
+            # Emails - vacío
+            df_libro2['Emails'] = None
+            
+            print(f"✅ DataFrame Libro2 creado: {len(df_libro2)} registros")
+            
+            # Generar archivo Excel
+            print("💾 Generando archivo Excel formato Libro2...")
+            excel_buffer = BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                df_libro2.to_excel(writer, sheet_name='Hoja1', index=False)
+                
+                # Ajustar anchos de columna
+                workbook = writer.book
+                worksheet = writer.sheets['Hoja1']
+                
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if cell.value and len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 50)
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            excel_buffer.seek(0)
+            excel_data = base64.b64encode(excel_buffer.read()).decode('utf-8')
+            
+            from datetime import datetime
+            fecha_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            return {
+                'success': True,
+                'message': f'Archivo transformado exitosamente. {len(df_libro2)} registros en formato Libro2.',
+                'excel_data': excel_data,
+                'filename': f'Libro2_FarmaBogota_{fecha_actual}.xlsx'
+            }
+            
+        except Exception as e:
+            print(f"❌ Error: {str(e)}")
+            return {
+                'success': False,
+                'error': f'Error al transformar a Libro2: {str(e)}',
+                'details': 'Verifica que el archivo tenga las columnas correctas'
+            }
+    
+    def process_distrifarma_libro2(self, distrifarma_content, distrifarma_filename):
+        """
+        Procesa archivo de distrifarma y lo transforma al formato Libro2.xlsx final
+        - Título de la Visita = Persona de Contacto - CEDULA
+        - ID Referencia = Diswifarma-ID_Referencia_original
+        - Notas = INTEGRADOS (si existe)
+        - Quita las columnas CEDULA e INTEGRADOS
+        """
+        try:
+            print(f"🔄 [DISTRIFARMA → LIBRO2] Procesando archivo: {distrifarma_filename}")
+            
+            # Leer archivo distrifarma SIN encabezados (header=None)
+            df_distrifarma = pd.read_excel(BytesIO(distrifarma_content), header=None)
+            print(f"✅ Archivo distrifarma leído: {len(df_distrifarma)} filas")
+            print(f"   Primeras 10 filas sin procesar:")
+            for idx in range(min(10, len(df_distrifarma))):
+                print(f"      Fila {idx}: {df_distrifarma.iloc[idx].tolist()}")
+            
+            # Encontrar la fila donde empiezan los datos reales
+            # Los datos reales tienen valores en la mayoría de las columnas
+            fila_inicio_datos = 0
+            for idx in range(len(df_distrifarma)):
+                fila = df_distrifarma.iloc[idx]
+                # Contar cuántas celdas tienen valores no nulos
+                valores_no_nulos = fila.notna().sum()
+                # Verificar si NO es una fila de encabezados (no contiene palabras clave)
+                es_fila_encabezados = any(
+                    pd.notna(celda) and any(palabra in str(celda) for palabra in 
+                    ['Nombre Vehiculo', 'Titulo de la Visita', 'Dirección', 'Persona de Contacto', 'CEDULA', 'ID Referencia'])
+                    for celda in fila
+                )
+                
+                # Si tiene suficientes valores (al menos 5) y NO es fila de encabezados, es el inicio de datos
+                if valores_no_nulos >= 5 and not es_fila_encabezados:
+                    fila_inicio_datos = idx
+                    print(f"   ✅ Datos reales comienzan en fila {idx}")
+                    break
+            
+            # Eliminar todas las filas anteriores a los datos reales
+            if fila_inicio_datos > 0:
+                print(f"   🗑️ Eliminando {fila_inicio_datos} filas antes de los datos...")
+                df_distrifarma = df_distrifarma.iloc[fila_inicio_datos:].reset_index(drop=True)
+                print(f"   Filas restantes: {len(df_distrifarma)}")
+            
+            # Asignar nombres de columnas manualmente según el orden esperado
+            # Orden: Nombre Vehiculo, Titulo de la Visita, Dirección, ID Referencia, Persona de Contacto, CEDULA, Teléfono, INTEGRADOS
+            column_names = ['Nombre Vehiculo', 'Titulo de la Visita', 'Dirección', 'ID Referencia', 
+                           'Persona de Contacto', 'CEDULA', 'Teléfono', 'INTEGRADOS']
+            
+            # Si el archivo tiene menos columnas, ajustar
+            num_cols = len(df_distrifarma.columns)
+            if num_cols < len(column_names):
+                column_names = column_names[:num_cols]
+                print(f"⚠️ Archivo tiene {num_cols} columnas, usando solo: {column_names}")
+            
+            df_distrifarma.columns = column_names[:num_cols]
+            
+            print(f"   Columnas asignadas: {list(df_distrifarma.columns)}")
+            print(f"   Ejemplo de datos procesados:")
+            print(f"      {df_distrifarma[['Persona de Contacto', 'CEDULA', 'ID Referencia']].head(3).to_string()}")
+            
+            # Crear DataFrame con estructura de Libro2
+            df_libro2 = pd.DataFrame()
+            
+            # Nombre Vehículo - mantener si existe, sino vacío
+            df_libro2['Nombre Vehiculo'] = df_distrifarma['Nombre Vehiculo'] if 'Nombre Vehiculo' in df_distrifarma.columns else ''
+            
+            # Título de la Visita = Persona de Contacto - CEDULA
+            df_libro2['Título de la Visita'] = df_distrifarma.apply(
+                lambda row: f"{row['Persona de Contacto']} - {row['CEDULA']}" 
+                          if pd.notna(row['Persona de Contacto']) and pd.notna(row['CEDULA'])
+                          else (row['Persona de Contacto'] if pd.notna(row['Persona de Contacto']) else str(row['CEDULA'])),
+                axis=1
+            )
+            
+            # Dirección - permanece igual
+            df_libro2['Dirección'] = df_distrifarma['Dirección']
+            
+            # Latitud y Longitud - mantener si existen
+            df_libro2['Latitud'] = df_distrifarma['Latitud'] if 'Latitud' in df_distrifarma.columns else None
+            df_libro2['Longitud'] = df_distrifarma['Longitud'] if 'Longitud' in df_distrifarma.columns else None
+            
+            # ID Referencia - Lógica especial:
+            # Si el ID contiene letras Y números, usar solo el ID original (sin prefijo)
+            # Si el ID es solo números, agregar prefijo "Diswifarma-"
+            def procesar_id_referencia(id_ref):
+                if pd.isna(id_ref):
+                    return 'Diswifarma'
+                
+                id_str = str(id_ref).strip()
+                
+                # Verificar si contiene letras
+                tiene_letras = any(c.isalpha() for c in id_str)
+                tiene_numeros = any(c.isdigit() for c in id_str)
+                
+                # Si tiene letras y números, usar solo el ID original (sin prefijo)
+                if tiene_letras and tiene_numeros:
+                    return id_str
+                # Si es solo números, agregar prefijo
+                else:
+                    return f"Diswifarma-{id_str}"
+            
+            df_libro2['ID Referencia'] = df_distrifarma['ID Referencia'].apply(procesar_id_referencia)
+            
+            # Notas = INTEGRADOS si existe, sino usar campo Notas original, sino vacío
+            if 'INTEGRADOS' in df_distrifarma.columns:
+                df_libro2['Notas'] = df_distrifarma['INTEGRADOS']
+            elif 'Notas' in df_distrifarma.columns:
+                df_libro2['Notas'] = df_distrifarma['Notas']
+            else:
+                df_libro2['Notas'] = ''
+            
+            # Persona de Contacto - mantener original (sin CEDULA)
+            df_libro2['Persona de Contacto'] = df_distrifarma['Persona de Contacto']
+            
+            # Teléfono - mantener si existe
+            df_libro2['Teléfono'] = df_distrifarma['Teléfono'] if 'Teléfono' in df_distrifarma.columns else None
+            
+            # Emails - mantener si existe
+            df_libro2['Emails'] = df_distrifarma['Emails'] if 'Emails' in df_distrifarma.columns else None
+            
+            # NOTA: No incluimos las columnas CEDULA ni INTEGRADOS en el resultado final
+            
+            print(f"✅ DataFrame Libro2 creado: {len(df_libro2)} registros")
+            print(f"   Columnas en Libro2: {list(df_libro2.columns)}")
+            print(f"   Ejemplo de IDs procesados:")
+            for idx in range(min(3, len(df_libro2))):
+                print(f"      {idx+1}. Título: {df_libro2.iloc[idx]['Título de la Visita']}")
+                print(f"         ID Ref: {df_libro2.iloc[idx]['ID Referencia']}")
+            
+            # Generar archivo Excel
+            print("💾 Generando archivo Excel formato Libro2...")
+            excel_buffer = BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                df_libro2.to_excel(writer, sheet_name='Hoja1', index=False)
+                
+                # Ajustar anchos de columna
+                workbook = writer.book
+                worksheet = writer.sheets['Hoja1']
+                
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if cell.value and len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 50)
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            excel_buffer.seek(0)
+            excel_data = base64.b64encode(excel_buffer.read()).decode('utf-8')
+            
+            from datetime import datetime
+            fecha_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            return {
+                'success': True,
+                'message': f'Archivo transformado exitosamente. {len(df_libro2)} registros en formato Libro2.',
+                'excel_data': excel_data,
+                'filename': f'Libro2_Distrifarma_{fecha_actual}.xlsx'
+            }
+            
+        except Exception as e:
+            print(f"❌ Error: {str(e)}")
+            return {
+                'success': False,
+                'error': f'Error al transformar Distrifarma a Libro2: {str(e)}',
+                'details': 'Verifica que el archivo tenga las columnas correctas'
+            }
     
     def _extraer_ciudad_bogota(self, ciudad_ehlpharma, ciudad_ofimatic):
         """
@@ -2059,31 +2585,49 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         self.wfile.write(json_data.encode('utf-8'))
 
 def start_server(port=8080):
-    """Inicia el servidor web local"""
+    """Inicia el servidor web local o en Render"""
     try:
-        server_address = ('localhost', port)
+        # Obtener puerto de variables de entorno (Render lo proporciona)
+        port = int(os.environ.get('PORT', port))
+        
+        # Determinar si estamos en producción o desarrollo
+        is_production = os.environ.get('RENDER', False)
+        
+        # En producción (Render), escuchar en 0.0.0.0, en desarrollo en localhost
+        host = '0.0.0.0' if is_production else 'localhost'
+        server_address = (host, port)
+        
         httpd = HTTPServer(server_address, MailboxHandler)
         
-        print(f"🚀 Iniciando servidor en http://localhost:{port}")
+        print(f"🚀 Iniciando servidor en http://{host}:{port}")
         print("📂 Directorio actual:", os.getcwd())
+        print(f"🌍 Modo: {'Producción (Render)' if is_production else 'Desarrollo (Local)'}")
         print("✅ Servidor iniciado correctamente")
-        print("🌐 Abriendo navegador automáticamente...")
         
-        # Abrir navegador automáticamente después de un breve retraso
-        def open_browser():
-            time.sleep(1.5)
-            webbrowser.open(f'http://localhost:{port}')
-        
-        browser_thread = threading.Thread(target=open_browser)
-        browser_thread.daemon = True
-        browser_thread.start()
-        
-        print("\n" + "="*50)
-        print("💡 INSTRUCCIONES:")
-        print("1. El navegador se abrirá automáticamente")
-        print("2. Si no se abre, ve a: http://localhost:8080")
-        print("3. Para cerrar: presiona Ctrl+C en esta terminal")
-        print("="*50 + "\n")
+        # Solo abrir navegador en modo desarrollo (local)
+        if not is_production:
+            print("🌐 Abriendo navegador automáticamente...")
+            
+            # Abrir navegador automáticamente después de un breve retraso
+            def open_browser():
+                time.sleep(1.5)
+                webbrowser.open(f'http://localhost:{port}')
+            
+            browser_thread = threading.Thread(target=open_browser)
+            browser_thread.daemon = True
+            browser_thread.start()
+            
+            print("\n" + "="*50)
+            print("💡 INSTRUCCIONES:")
+            print("1. El navegador se abrirá automáticamente")
+            print(f"2. Si no se abre, ve a: http://localhost:{port}")
+            print("3. Para cerrar: presiona Ctrl+C en esta terminal")
+            print("="*50 + "\n")
+        else:
+            print("\n" + "="*50)
+            print("✅ Servidor desplegado en Render")
+            print(f"🌐 Puerto: {port}")
+            print("="*50 + "\n")
         
         httpd.serve_forever()
         
@@ -2093,7 +2637,7 @@ def start_server(port=8080):
         print("👋 ¡Hasta pronto!")
     except Exception as e:
         print(f"❌ Error al iniciar el servidor: {e}")
-        print("💡 Intenta con otro puerto o verifica que el puerto 8080 esté libre")
+        print("💡 Intenta con otro puerto o verifica que el puerto esté libre")
 
 def main():
     print("🚀 Creador de Relaciones Mailbox - Versión Web")
