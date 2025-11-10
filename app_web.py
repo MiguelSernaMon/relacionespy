@@ -784,8 +784,8 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 <li><strong>Archivo Distrifarma:</strong> Excel con formato Libro2 existente (con columnas CEDULA e INTEGRADOS adicionales)</li>
                 <li><strong>Proceso:</strong> Transforma y ajusta al formato Libro2.xlsx final</li>
                 <li><strong>Título Visita:</strong> Persona de Contacto + " - " + CEDULA</li>
-                <li><strong>Dirección:</strong> Permanece igual</li>
-                <li><strong>ID Referencia:</strong> "Diswifarma-" + ID Referencia original</li>
+                <li><strong>Dirección:</strong> Dirección original + ", " + Municipio (extraído de "Titulo de la Visita": "La Estrella-Antioquia-Colombia" → "La Estrella")</li>
+                <li><strong>ID Referencia:</strong> "Diswifarma-" + ID Referencia original (si es solo números)</li>
                 <li><strong>Notas:</strong> Valor de columna INTEGRADOS</li>
                 <li><strong>Resultado:</strong> Excel sin las columnas CEDULA e INTEGRADOS, formato Libro2 estándar</li>
             </ul>
@@ -2410,21 +2410,55 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 print(f"   Filas restantes: {len(df_distrifarma)}")
             
             # Asignar nombres de columnas manualmente según el orden esperado
-            # Orden: Nombre Vehiculo, Titulo de la Visita, Dirección, ID Referencia, Persona de Contacto, CEDULA, Teléfono, INTEGRADOS
-            column_names = ['Nombre Vehiculo', 'Titulo de la Visita', 'Dirección', 'ID Referencia', 
-                           'Persona de Contacto', 'CEDULA', 'Teléfono', 'INTEGRADOS']
+            # Orden: Nombre Vehiculo, Titulo de la Visita, Dirección, Latitud, Longitud, ID Referencia, Persona de Contacto, CEDULA, Teléfono, INTEGRADOS
+            column_names = ['Nombre Vehiculo', 'Titulo de la Visita', 'Dirección', 'Latitud', 'Longitud',
+                           'ID Referencia', 'Persona de Contacto', 'CEDULA', 'Teléfono', 'INTEGRADOS']
             
-            # Si el archivo tiene menos columnas, ajustar
+            # Ajustar según el número de columnas del archivo
             num_cols = len(df_distrifarma.columns)
-            if num_cols < len(column_names):
-                column_names = column_names[:num_cols]
-                print(f"⚠️ Archivo tiene {num_cols} columnas, usando solo: {column_names}")
             
-            df_distrifarma.columns = column_names[:num_cols]
+            if num_cols < len(column_names):
+                # Si tiene menos columnas, usar solo las primeras
+                final_column_names = column_names[:num_cols]
+                print(f"⚠️ Archivo tiene {num_cols} columnas, usando solo: {final_column_names}")
+            elif num_cols > len(column_names):
+                # Si tiene más columnas, agregar nombres genéricos para las columnas extra
+                final_column_names = column_names + [f'Extra_{i}' for i in range(num_cols - len(column_names))]
+                print(f"⚠️ Archivo tiene {num_cols} columnas (más de lo esperado), columnas extra serán ignoradas")
+            else:
+                final_column_names = column_names
+            
+            df_distrifarma.columns = final_column_names
             
             print(f"   Columnas asignadas: {list(df_distrifarma.columns)}")
-            print(f"   Ejemplo de datos procesados:")
-            print(f"      {df_distrifarma[['Persona de Contacto', 'CEDULA', 'ID Referencia']].head(3).to_string()}")
+            
+            # Mostrar ejemplo solo de las columnas que usaremos
+            columnas_mostrar = [col for col in ['Persona de Contacto', 'CEDULA', 'ID Referencia'] if col in df_distrifarma.columns]
+            if columnas_mostrar:
+                print(f"   Ejemplo de datos procesados:")
+                print(f"      {df_distrifarma[columnas_mostrar].head(3).to_string()}")
+            
+            # Crear función para extraer municipio del campo "Titulo de la Visita" original
+            def extraer_municipio(titulo_visita):
+                """
+                Extrae el municipio del campo titulo de la visita
+                Ejemplos:
+                - "La Estrella-Antioquia-Colombia" → "La Estrella"
+                - "La Estrella" → "La Estrella"
+                - "Medellín-Antioquia-Colombia" → "Medellín"
+                """
+                if pd.isna(titulo_visita):
+                    return ''
+                
+                titulo_str = str(titulo_visita).strip()
+                
+                # Si contiene guiones, tomar solo la primera parte (antes del primer guion)
+                if '-' in titulo_str:
+                    municipio = titulo_str.split('-')[0].strip()
+                else:
+                    municipio = titulo_str
+                
+                return municipio
             
             # Crear DataFrame con estructura de Libro2
             df_libro2 = pd.DataFrame()
@@ -2440,8 +2474,17 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 axis=1
             )
             
-            # Dirección - permanece igual
-            df_libro2['Dirección'] = df_distrifarma['Dirección']
+            # Dirección - agregar municipio al final
+            # Combinar dirección original + ", " + municipio extraído del titulo de la visita
+            if 'Titulo de la Visita' in df_distrifarma.columns:
+                df_libro2['Dirección'] = df_distrifarma.apply(
+                    lambda row: f"{row['Dirección']}, {extraer_municipio(row['Titulo de la Visita'])}" 
+                              if pd.notna(row['Dirección']) and extraer_municipio(row['Titulo de la Visita'])
+                              else str(row['Dirección']) if pd.notna(row['Dirección']) else '',
+                    axis=1
+                )
+            else:
+                df_libro2['Dirección'] = df_distrifarma['Dirección']
             
             # Latitud y Longitud - mantener si existen
             df_libro2['Latitud'] = df_distrifarma['Latitud'] if 'Latitud' in df_distrifarma.columns else None
@@ -2490,9 +2533,10 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             
             print(f"✅ DataFrame Libro2 creado: {len(df_libro2)} registros")
             print(f"   Columnas en Libro2: {list(df_libro2.columns)}")
-            print(f"   Ejemplo de IDs procesados:")
+            print(f"   Ejemplo de datos procesados:")
             for idx in range(min(3, len(df_libro2))):
                 print(f"      {idx+1}. Título: {df_libro2.iloc[idx]['Título de la Visita']}")
+                print(f"         Dirección: {df_libro2.iloc[idx]['Dirección']}")
                 print(f"         ID Ref: {df_libro2.iloc[idx]['ID Referencia']}")
             
             # Generar archivo Excel
