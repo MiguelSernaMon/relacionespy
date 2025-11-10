@@ -783,6 +783,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             <ul>
                 <li><strong>Archivo Distrifarma:</strong> Excel con formato Libro2 existente (con columnas CEDULA e INTEGRADOS adicionales)</li>
                 <li><strong>Proceso:</strong> Transforma y ajusta al formato Libro2.xlsx final</li>
+                <li><strong>Nombre Vehículo:</strong> Normalizado con primera letra mayúscula ("VEHICULO 1" → "Vehiculo 1")</li>
                 <li><strong>Título Visita:</strong> Persona de Contacto + " - " + CEDULA</li>
                 <li><strong>Dirección:</strong> Dirección original + ", " + Municipio (extraído de "Titulo de la Visita": "La Estrella-Antioquia-Colombia" → "La Estrella")</li>
                 <li><strong>ID Referencia:</strong> "Diswifarma-" + ID Referencia original (si es solo números)</li>
@@ -2410,9 +2411,9 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 print(f"   Filas restantes: {len(df_distrifarma)}")
             
             # Asignar nombres de columnas manualmente según el orden esperado
-            # Orden: Nombre Vehiculo, Titulo de la Visita, Dirección, Latitud, Longitud, ID Referencia, Persona de Contacto, CEDULA, Teléfono, INTEGRADOS
-            column_names = ['Nombre Vehiculo', 'Titulo de la Visita', 'Dirección', 'Latitud', 'Longitud',
-                           'ID Referencia', 'Persona de Contacto', 'CEDULA', 'Teléfono', 'INTEGRADOS']
+            # Orden ACTUALIZADO: Nombre Vehiculo, Titulo de la Visita, Dirección, ID Referencia, Persona de Contacto, CEDULA, Teléfono, + columnas extra opcionales
+            column_names = ['Nombre Vehiculo', 'Titulo de la Visita', 'Dirección', 'ID Referencia', 
+                           'Persona de Contacto', 'CEDULA', 'Teléfono', 'INTEGRADOS']
             
             # Ajustar según el número de columnas del archivo
             num_cols = len(df_distrifarma.columns)
@@ -2424,7 +2425,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             elif num_cols > len(column_names):
                 # Si tiene más columnas, agregar nombres genéricos para las columnas extra
                 final_column_names = column_names + [f'Extra_{i}' for i in range(num_cols - len(column_names))]
-                print(f"⚠️ Archivo tiene {num_cols} columnas (más de lo esperado), columnas extra serán ignoradas")
+                print(f"⚠️ Archivo tiene {num_cols} columnas (más de lo esperado), columnas extra: {[f'Extra_{i}' for i in range(num_cols - len(column_names))]}")
             else:
                 final_column_names = column_names
             
@@ -2463,8 +2464,22 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             # Crear DataFrame con estructura de Libro2
             df_libro2 = pd.DataFrame()
             
-            # Nombre Vehículo - mantener si existe, sino vacío
-            df_libro2['Nombre Vehiculo'] = df_distrifarma['Nombre Vehiculo'] if 'Nombre Vehiculo' in df_distrifarma.columns else ''
+            # Nombre Vehículo - normalizar primera letra en mayúscula
+            # Convertir "VEHICULO 1" a "Vehiculo 1"
+            def normalizar_nombre_vehiculo(nombre):
+                if pd.isna(nombre):
+                    return ''
+                nombre_str = str(nombre).strip()
+                # Aplicar capitalize a cada palabra (primera letra mayúscula, resto minúscula)
+                # Pero mantener números intactos
+                palabras = nombre_str.split()
+                palabras_normalizadas = [palabra.capitalize() if palabra.isalpha() else palabra for palabra in palabras]
+                return ' '.join(palabras_normalizadas)
+            
+            if 'Nombre Vehiculo' in df_distrifarma.columns:
+                df_libro2['Nombre Vehiculo'] = df_distrifarma['Nombre Vehiculo'].apply(normalizar_nombre_vehiculo)
+            else:
+                df_libro2['Nombre Vehiculo'] = ''
             
             # Título de la Visita = Persona de Contacto - CEDULA
             df_libro2['Título de la Visita'] = df_distrifarma.apply(
@@ -2535,7 +2550,8 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             print(f"   Columnas en Libro2: {list(df_libro2.columns)}")
             print(f"   Ejemplo de datos procesados:")
             for idx in range(min(3, len(df_libro2))):
-                print(f"      {idx+1}. Título: {df_libro2.iloc[idx]['Título de la Visita']}")
+                print(f"      {idx+1}. Vehículo: {df_libro2.iloc[idx]['Nombre Vehiculo']}")
+                print(f"         Título: {df_libro2.iloc[idx]['Título de la Visita']}")
                 print(f"         Dirección: {df_libro2.iloc[idx]['Dirección']}")
                 print(f"         ID Ref: {df_libro2.iloc[idx]['ID Referencia']}")
             
