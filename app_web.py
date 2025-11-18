@@ -2385,12 +2385,16 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             df_test = pd.read_excel(BytesIO(distrifarma_content), header=None, nrows=1)
             primera_fila = df_test.iloc[0].tolist() if len(df_test) > 0 else []
             
-            # Verificar si la primera fila contiene encabezados conocidos
-            encabezados_carmen = ['Nombre Vehiculo', 'Titulo de la Visita', 'Dirección', 'Latitud', 
-                                 'Longitud', 'ID Referencia', 'Notas', 'Persona de Contacto', 'Teléfono']
+            # Verificar si la primera fila contiene encabezados conocidos (case-insensitive)
+            encabezados_carmen = ['nombre vehiculo', 'titulo de la visita', 'dirección', 'direccion',
+                                 'latitud', 'longitud', 'id referencia', 'notas', 
+                                 'persona de contacto', 'teléfono', 'telefono', 'cedula']
+            
+            # Convertir primera fila a minúsculas para comparación
+            primera_fila_lower = [str(celda).strip().lower() for celda in primera_fila if pd.notna(celda)]
             
             tiene_encabezados_carmen = any(
-                str(celda).strip() in encabezados_carmen for celda in primera_fila if pd.notna(celda)
+                encabezado in primera_fila_lower for encabezado in encabezados_carmen
             )
             
             if tiene_encabezados_carmen:
@@ -2400,8 +2404,39 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 print(f"✅ Archivo leído: {len(df_distrifarma)} filas")
                 print(f"   Columnas detectadas: {list(df_distrifarma.columns)}")
                 
-                # Normalizar nombres de columnas (eliminar espacios extra)
-                df_distrifarma.columns = [str(col).strip() for col in df_distrifarma.columns]
+                # Normalizar nombres de columnas: convertir a formato estándar con primera letra en mayúscula
+                # Mapeo de variantes a nombres estándar
+                mapeo_columnas = {
+                    'nombre vehiculo': 'Nombre Vehiculo',
+                    'titulo de la visita': 'Titulo de la Visita',
+                    'dirección': 'Dirección',
+                    'direccion': 'Dirección',
+                    'latitud': 'Latitud',
+                    'longitud': 'Longitud',
+                    'id referencia': 'ID Referencia',
+                    'notas': 'Notas',
+                    'persona de contacto': 'Persona de Contacto',
+                    'teléfono': 'Teléfono',
+                    'telefono': 'Teléfono',
+                    'cedula': 'CEDULA',
+                    'cédula': 'CEDULA',
+                    'cuota': 'CUOTA',
+                    'flete': 'FLETE',
+                    'observacion': 'Observacion',
+                    'observación': 'Observacion',
+                    'emails': 'Emails'
+                }
+                
+                # Renombrar columnas usando el mapeo
+                nuevos_nombres = {}
+                for col in df_distrifarma.columns:
+                    col_normalizada = str(col).strip().lower()
+                    if col_normalizada in mapeo_columnas:
+                        nuevos_nombres[col] = mapeo_columnas[col_normalizada]
+                
+                if nuevos_nombres:
+                    df_distrifarma.rename(columns=nuevos_nombres, inplace=True)
+                    print(f"   Columnas normalizadas: {list(df_distrifarma.columns)}")
                 
                 # Verificar columnas requeridas
                 columnas_requeridas = ['Persona de Contacto', 'Dirección']
