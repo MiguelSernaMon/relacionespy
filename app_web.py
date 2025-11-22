@@ -1548,6 +1548,27 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             print(f"✅ Planilla ofimatic leída: {len(df_ofimatic)} filas")
             print(f"   Columnas disponibles: {list(df_ofimatic.columns)}")
             
+            # DEBUG: Inspeccionar columna NomMensajero
+            print("\n🔍 DEBUG: Analizando columna 'NomMensajero'...")
+            for col in df_ofimatic.columns:
+                if 'NomMensajero' in str(col) or 'mensajero' in str(col).lower():
+                    print(f"   Columna encontrada: '{col}'")
+                    print(f"   Tipo: {type(col)}")
+                    print(f"   Repr: {repr(col)}")
+                    if isinstance(col, str):
+                        print(f"   Bytes: {col.encode('utf-8')}")
+                        print(f"   Caracteres:")
+                        for i, char in enumerate(col):
+                            print(f"      [{i}] '{char}' -> U+{ord(char):04X}")
+                    
+                    # Valores únicos
+                    valores = df_ofimatic[col].dropna().unique()[:5]
+                    print(f"   Primeros 5 valores únicos:")
+                    for val in valores:
+                        print(f"      - '{val}'")
+                    break
+            print("🔍 Fin del debug\n")
+            
             # Verificar columnas requeridas en planilla madre
             required_madre_cols = ['identificationPatient', 'idOrder']
             optional_madre_cols = ['addressPatient', 'mobilePhonePatient', 'cityNameOrder']
@@ -1578,8 +1599,10 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 lambda x: str(x).replace('.0', '') if pd.notna(x) and str(x).endswith('.0') else str(x)
             ).str.strip()
             
-            # Limpiar NITs de la planilla ofimatic: convertir a string y eliminar espacios
-            df_ofimatic['nit'] = df_ofimatic['nit'].astype(str).str.strip()
+            # Limpiar NITs de la planilla ofimatic: convertir a string, eliminar .0 y espacios
+            df_ofimatic['nit'] = df_ofimatic['nit'].apply(
+                lambda x: str(x).replace('.0', '') if pd.notna(x) and str(x).endswith('.0') else str(x)
+            ).str.strip()
             
             # Mostrar ejemplos de NITs
             print(f"📋 Ejemplos NITs madre: {df_madre['identificationPatient'].head(10).tolist()}")
@@ -1650,6 +1673,11 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             # Paso 2: Transformar al formato Libro2.xlsx
             print("🔄 Paso 2: Transformando al formato Libro2...")
             
+            # Limpiar espacios en NomMensajero
+            if 'NomMensajero' in df_ofimatic.columns:
+                df_ofimatic['NomMensajero'] = df_ofimatic['NomMensajero'].astype(str).str.strip()
+                print(f"   ✅ Columna 'NomMensajero' limpiada de espacios")
+            
             # Crear DataFrame con estructura de Libro2
             df_libro2 = pd.DataFrame()
             
@@ -1657,10 +1685,26 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             df_libro2['Nombre Vehiculo'] = df_ofimatic['NomMensajero'] if 'NomMensajero' in df_ofimatic.columns else ''
             
             # Título de la Visita = NOMBRE - identificationPatient
-            df_libro2['Título de la Visita'] = df_ofimatic.apply(
-                lambda row: f"{row['NOMBRE']} - {row['nit']}" if 'NOMBRE' in df_ofimatic.columns else row['nit'],
-                axis=1
-            )
+            # Limpiar espacios extras del nombre y normalizar NIT (quitar .0)
+            def crear_titulo_visita(row):
+                nombre = str(row['NOMBRE']).strip() if pd.notna(row['NOMBRE']) else ''
+                # Limpiar espacios múltiples y reemplazar por un solo espacio
+                nombre = ' '.join(nombre.split())
+                
+                # Normalizar NIT: quitar .0 si es flotante
+                nit = row['nit']
+                if pd.notna(nit):
+                    nit_str = str(nit)
+                    # Si termina en .0, quitarlo
+                    if nit_str.endswith('.0'):
+                        nit_str = nit_str[:-2]
+                    nit = nit_str
+                else:
+                    nit = ''
+                
+                return f"{nombre} - {nit}" if nombre and nit else (nombre if nombre else nit)
+            
+            df_libro2['Título de la Visita'] = df_ofimatic.apply(crear_titulo_visita, axis=1)
             
             # Dirección = addressPatient de madre (si existe) + ", " + ciudad + ", Antioquia"
             # Si no hay dirección de madre, usar DIRECCION de ofimatic
