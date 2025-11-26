@@ -781,14 +781,18 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         <div class="info-box" id="infoDistrifarmaLibro2" style="display: none;">
             <h3>📋 Distrifarma → Libro2 (Transformar):</h3>
             <ul>
-                <li><strong>Archivo Distrifarma:</strong> Excel con formato Libro2 existente (con columnas CEDULA e INTEGRADOS adicionales)</li>
-                <li><strong>Proceso:</strong> Transforma y ajusta al formato Libro2.xlsx final</li>
+                <li><strong>Formatos Soportados:</strong> 
+                    <ul>
+                        <li>Formato antiguo: Sin encabezados (columnas: Nombre Vehiculo, Titulo, Dirección, ID, Persona, CEDULA, Teléfono, INTEGRADOS)</li>
+                        <li>Formato Carmen de Viboral: Con encabezados (columnas: Nombre Vehiculo, Titulo de la Visita, Dirección, Latitud, Longitud, ID Referencia, Notas, Persona de Contacto, Teléfono, Emails)</li>
+                    </ul>
+                </li>
+                <li><strong>Detección Automática:</strong> El sistema detecta automáticamente el formato del archivo</li>
                 <li><strong>Nombre Vehículo:</strong> Normalizado con primera letra mayúscula ("VEHICULO 1" → "Vehiculo 1")</li>
-                <li><strong>Título Visita:</strong> Persona de Contacto + " - " + CEDULA</li>
-                <li><strong>Dirección:</strong> Dirección original + ", " + Municipio (extraído de "Titulo de la Visita": "La Estrella-Antioquia-Colombia" → "La Estrella")</li>
-                <li><strong>ID Referencia:</strong> "Diswifarma-" + ID Referencia original (si es solo números)</li>
-                <li><strong>Notas:</strong> Valor de columna INTEGRADOS</li>
-                <li><strong>Resultado:</strong> Excel sin las columnas CEDULA e INTEGRADOS, formato Libro2 estándar</li>
+                <li><strong>Título Visita:</strong> Persona de Contacto + " - " + CEDULA (o Teléfono en formato Carmen)</li>
+                <li><strong>Dirección:</strong> Dirección original + ", " + Municipio (extraído de "Titulo de la Visita")</li>
+                <li><strong>ID Referencia:</strong> "Diswifarma-" + ID original (si es solo números)</li>
+                <li><strong>Resultado:</strong> Excel en formato Libro2 estándar para ruteo</li>
             </ul>
         </div>
         
@@ -1544,6 +1548,27 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             print(f"✅ Planilla ofimatic leída: {len(df_ofimatic)} filas")
             print(f"   Columnas disponibles: {list(df_ofimatic.columns)}")
             
+            # DEBUG: Inspeccionar columna NomMensajero
+            print("\n🔍 DEBUG: Analizando columna 'NomMensajero'...")
+            for col in df_ofimatic.columns:
+                if 'NomMensajero' in str(col) or 'mensajero' in str(col).lower():
+                    print(f"   Columna encontrada: '{col}'")
+                    print(f"   Tipo: {type(col)}")
+                    print(f"   Repr: {repr(col)}")
+                    if isinstance(col, str):
+                        print(f"   Bytes: {col.encode('utf-8')}")
+                        print(f"   Caracteres:")
+                        for i, char in enumerate(col):
+                            print(f"      [{i}] '{char}' -> U+{ord(char):04X}")
+                    
+                    # Valores únicos
+                    valores = df_ofimatic[col].dropna().unique()[:5]
+                    print(f"   Primeros 5 valores únicos:")
+                    for val in valores:
+                        print(f"      - '{val}'")
+                    break
+            print("🔍 Fin del debug\n")
+            
             # Verificar columnas requeridas en planilla madre
             required_madre_cols = ['identificationPatient', 'idOrder']
             optional_madre_cols = ['addressPatient', 'mobilePhonePatient', 'cityNameOrder']
@@ -1574,8 +1599,10 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 lambda x: str(x).replace('.0', '') if pd.notna(x) and str(x).endswith('.0') else str(x)
             ).str.strip()
             
-            # Limpiar NITs de la planilla ofimatic: convertir a string y eliminar espacios
-            df_ofimatic['nit'] = df_ofimatic['nit'].astype(str).str.strip()
+            # Limpiar NITs de la planilla ofimatic: convertir a string, eliminar .0 y espacios
+            df_ofimatic['nit'] = df_ofimatic['nit'].apply(
+                lambda x: str(x).replace('.0', '') if pd.notna(x) and str(x).endswith('.0') else str(x)
+            ).str.strip()
             
             # Mostrar ejemplos de NITs
             print(f"📋 Ejemplos NITs madre: {df_madre['identificationPatient'].head(10).tolist()}")
@@ -1646,6 +1673,11 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             # Paso 2: Transformar al formato Libro2.xlsx
             print("🔄 Paso 2: Transformando al formato Libro2...")
             
+            # Limpiar espacios en NomMensajero
+            if 'NomMensajero' in df_ofimatic.columns:
+                df_ofimatic['NomMensajero'] = df_ofimatic['NomMensajero'].astype(str).str.strip()
+                print(f"   ✅ Columna 'NomMensajero' limpiada de espacios")
+            
             # Crear DataFrame con estructura de Libro2
             df_libro2 = pd.DataFrame()
             
@@ -1653,10 +1685,26 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             df_libro2['Nombre Vehiculo'] = df_ofimatic['NomMensajero'] if 'NomMensajero' in df_ofimatic.columns else ''
             
             # Título de la Visita = NOMBRE - identificationPatient
-            df_libro2['Título de la Visita'] = df_ofimatic.apply(
-                lambda row: f"{row['NOMBRE']} - {row['nit']}" if 'NOMBRE' in df_ofimatic.columns else row['nit'],
-                axis=1
-            )
+            # Limpiar espacios extras del nombre y normalizar NIT (quitar .0)
+            def crear_titulo_visita(row):
+                nombre = str(row['NOMBRE']).strip() if pd.notna(row['NOMBRE']) else ''
+                # Limpiar espacios múltiples y reemplazar por un solo espacio
+                nombre = ' '.join(nombre.split())
+                
+                # Normalizar NIT: quitar .0 si es flotante
+                nit = row['nit']
+                if pd.notna(nit):
+                    nit_str = str(nit)
+                    # Si termina en .0, quitarlo
+                    if nit_str.endswith('.0'):
+                        nit_str = nit_str[:-2]
+                    nit = nit_str
+                else:
+                    nit = ''
+                
+                return f"{nombre} - {nit}" if nombre and nit else (nombre if nombre else nit)
+            
+            df_libro2['Título de la Visita'] = df_ofimatic.apply(crear_titulo_visita, axis=1)
             
             # Dirección = addressPatient de madre (si existe) + ", " + ciudad + ", Antioquia"
             # Si no hay dirección de madre, usar DIRECCION de ofimatic
@@ -2377,64 +2425,131 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         try:
             print(f"🔄 [DISTRIFARMA → LIBRO2] Procesando archivo: {distrifarma_filename}")
             
-            # Leer archivo distrifarma SIN encabezados (header=None)
-            df_distrifarma = pd.read_excel(BytesIO(distrifarma_content), header=None)
-            print(f"✅ Archivo distrifarma leído: {len(df_distrifarma)} filas")
-            print(f"   Primeras 10 filas sin procesar:")
-            for idx in range(min(10, len(df_distrifarma))):
-                print(f"      Fila {idx}: {df_distrifarma.iloc[idx].tolist()}")
+            # PASO 1: Detectar si el archivo tiene encabezados en la primera fila
+            df_test = pd.read_excel(BytesIO(distrifarma_content), header=None, nrows=1)
+            primera_fila = df_test.iloc[0].tolist() if len(df_test) > 0 else []
             
-            # Encontrar la fila donde empiezan los datos reales
-            # Los datos reales tienen valores en la mayoría de las columnas
-            fila_inicio_datos = 0
-            for idx in range(len(df_distrifarma)):
-                fila = df_distrifarma.iloc[idx]
-                # Contar cuántas celdas tienen valores no nulos
-                valores_no_nulos = fila.notna().sum()
-                # Verificar si NO es una fila de encabezados (no contiene palabras clave)
-                es_fila_encabezados = any(
-                    pd.notna(celda) and any(palabra in str(celda) for palabra in 
-                    ['Nombre Vehiculo', 'Titulo de la Visita', 'Dirección', 'Persona de Contacto', 'CEDULA', 'ID Referencia'])
-                    for celda in fila
-                )
+            # Verificar si la primera fila contiene encabezados conocidos (case-insensitive)
+            encabezados_carmen = ['nombre vehiculo', 'titulo de la visita', 'dirección', 'direccion',
+                                 'latitud', 'longitud', 'id referencia', 'notas', 
+                                 'persona de contacto', 'teléfono', 'telefono', 'cedula']
+            
+            # Convertir primera fila a minúsculas para comparación
+            primera_fila_lower = [str(celda).strip().lower() for celda in primera_fila if pd.notna(celda)]
+            
+            tiene_encabezados_carmen = any(
+                encabezado in primera_fila_lower for encabezado in encabezados_carmen
+            )
+            
+            if tiene_encabezados_carmen:
+                # FORMATO CARMEN DE VIBORAL: tiene encabezados en la primera fila
+                print("   📋 Detectado formato Carmen de Viboral (con encabezados)")
+                df_distrifarma = pd.read_excel(BytesIO(distrifarma_content), header=0)
+                print(f"✅ Archivo leído: {len(df_distrifarma)} filas")
+                print(f"   Columnas detectadas: {list(df_distrifarma.columns)}")
                 
-                # Si tiene suficientes valores (al menos 5) y NO es fila de encabezados, es el inicio de datos
-                if valores_no_nulos >= 5 and not es_fila_encabezados:
-                    fila_inicio_datos = idx
-                    print(f"   ✅ Datos reales comienzan en fila {idx}")
-                    break
-            
-            # Eliminar todas las filas anteriores a los datos reales
-            if fila_inicio_datos > 0:
-                print(f"   🗑️ Eliminando {fila_inicio_datos} filas antes de los datos...")
-                df_distrifarma = df_distrifarma.iloc[fila_inicio_datos:].reset_index(drop=True)
-                print(f"   Filas restantes: {len(df_distrifarma)}")
-            
-            # Asignar nombres de columnas manualmente según el orden esperado
-            # Orden ACTUALIZADO: Nombre Vehiculo, Titulo de la Visita, Dirección, ID Referencia, Persona de Contacto, CEDULA, Teléfono, + columnas extra opcionales
-            column_names = ['Nombre Vehiculo', 'Titulo de la Visita', 'Dirección', 'ID Referencia', 
-                           'Persona de Contacto', 'CEDULA', 'Teléfono', 'INTEGRADOS']
-            
-            # Ajustar según el número de columnas del archivo
-            num_cols = len(df_distrifarma.columns)
-            
-            if num_cols < len(column_names):
-                # Si tiene menos columnas, usar solo las primeras
-                final_column_names = column_names[:num_cols]
-                print(f"⚠️ Archivo tiene {num_cols} columnas, usando solo: {final_column_names}")
-            elif num_cols > len(column_names):
-                # Si tiene más columnas, agregar nombres genéricos para las columnas extra
-                final_column_names = column_names + [f'Extra_{i}' for i in range(num_cols - len(column_names))]
-                print(f"⚠️ Archivo tiene {num_cols} columnas (más de lo esperado), columnas extra: {[f'Extra_{i}' for i in range(num_cols - len(column_names))]}")
+                # Normalizar nombres de columnas: convertir a formato estándar con primera letra en mayúscula
+                # Mapeo de variantes a nombres estándar
+                mapeo_columnas = {
+                    'nombre vehiculo': 'Nombre Vehiculo',
+                    'titulo de la visita': 'Titulo de la Visita',
+                    'dirección': 'Dirección',
+                    'direccion': 'Dirección',
+                    'latitud': 'Latitud',
+                    'longitud': 'Longitud',
+                    'id referencia': 'ID Referencia',
+                    'notas': 'Notas',
+                    'persona de contacto': 'Persona de Contacto',
+                    'teléfono': 'Teléfono',
+                    'telefono': 'Teléfono',
+                    'cedula': 'CEDULA',
+                    'cédula': 'CEDULA',
+                    'cuota': 'CUOTA',
+                    'flete': 'FLETE',
+                    'observacion': 'Observacion',
+                    'observación': 'Observacion',
+                    'emails': 'Emails'
+                }
+                
+                # Renombrar columnas usando el mapeo
+                nuevos_nombres = {}
+                for col in df_distrifarma.columns:
+                    col_normalizada = str(col).strip().lower()
+                    if col_normalizada in mapeo_columnas:
+                        nuevos_nombres[col] = mapeo_columnas[col_normalizada]
+                
+                if nuevos_nombres:
+                    df_distrifarma.rename(columns=nuevos_nombres, inplace=True)
+                    print(f"   Columnas normalizadas: {list(df_distrifarma.columns)}")
+                
+                # Verificar columnas requeridas
+                columnas_requeridas = ['Persona de Contacto', 'Dirección']
+                columnas_faltantes = [col for col in columnas_requeridas if col not in df_distrifarma.columns]
+                
+                if columnas_faltantes:
+                    print(f"⚠️ Columnas faltantes: {columnas_faltantes}")
+                
             else:
-                final_column_names = column_names
+                # FORMATO ANTIGUO: sin encabezados, necesita detección de filas
+                print("   📋 Detectado formato antiguo (sin encabezados en primera fila)")
+                df_distrifarma = pd.read_excel(BytesIO(distrifarma_content), header=None)
+                print(f"✅ Archivo distrifarma leído: {len(df_distrifarma)} filas")
+                print(f"   Primeras 5 filas sin procesar:")
+                for idx in range(min(5, len(df_distrifarma))):
+                    print(f"      Fila {idx}: {df_distrifarma.iloc[idx].tolist()[:8]}")  # Solo primeras 8 columnas
+                
+                # Encontrar la fila donde empiezan los datos reales
+                fila_inicio_datos = 0
+                for idx in range(len(df_distrifarma)):
+                    fila = df_distrifarma.iloc[idx]
+                    valores_no_nulos = fila.notna().sum()
+                    
+                    # Verificar si NO es una fila de encabezados
+                    es_fila_encabezados = any(
+                        pd.notna(celda) and any(palabra in str(celda) for palabra in 
+                        ['Nombre Vehiculo', 'Titulo de la Visita', 'Dirección', 'Persona de Contacto', 'CEDULA', 'ID Referencia'])
+                        for celda in fila
+                    )
+                    
+                    # Si tiene suficientes valores (al menos 5) y NO es fila de encabezados, es el inicio de datos
+                    if valores_no_nulos >= 5 and not es_fila_encabezados:
+                        fila_inicio_datos = idx
+                        print(f"   ✅ Datos reales comienzan en fila {idx}")
+                        break
+                
+                # Eliminar todas las filas anteriores a los datos reales
+                if fila_inicio_datos > 0:
+                    print(f"   🗑️ Eliminando {fila_inicio_datos} filas antes de los datos...")
+                    df_distrifarma = df_distrifarma.iloc[fila_inicio_datos:].reset_index(drop=True)
+                    print(f"   Filas restantes: {len(df_distrifarma)}")
             
-            df_distrifarma.columns = final_column_names
+                # Eliminar todas las filas anteriores a los datos reales
+                if fila_inicio_datos > 0:
+                    print(f"   🗑️ Eliminando {fila_inicio_datos} filas antes de los datos...")
+                    df_distrifarma = df_distrifarma.iloc[fila_inicio_datos:].reset_index(drop=True)
+                    print(f"   Filas restantes: {len(df_distrifarma)}")
+                
+                # Asignar nombres de columnas manualmente para formato antiguo
+                column_names = ['Nombre Vehiculo', 'Titulo de la Visita', 'Dirección', 'ID Referencia', 
+                               'Persona de Contacto', 'CEDULA', 'Teléfono', 'INTEGRADOS']
+                
+                num_cols = len(df_distrifarma.columns)
+                
+                if num_cols < len(column_names):
+                    final_column_names = column_names[:num_cols]
+                    print(f"⚠️ Archivo tiene {num_cols} columnas, usando solo: {final_column_names}")
+                elif num_cols > len(column_names):
+                    final_column_names = column_names + [f'Extra_{i}' for i in range(num_cols - len(column_names))]
+                    print(f"⚠️ Archivo tiene {num_cols} columnas (más de lo esperado), columnas extra serán ignoradas")
+                else:
+                    final_column_names = column_names
+                
+                df_distrifarma.columns = final_column_names
+                print(f"   Columnas asignadas: {list(df_distrifarma.columns)}")
             
-            print(f"   Columnas asignadas: {list(df_distrifarma.columns)}")
-            
-            # Mostrar ejemplo solo de las columnas que usaremos
-            columnas_mostrar = [col for col in ['Persona de Contacto', 'CEDULA', 'ID Referencia'] if col in df_distrifarma.columns]
+            # Mostrar ejemplo de datos procesados
+            columnas_mostrar = [col for col in ['Persona de Contacto', 'CEDULA', 'ID Referencia', 'Teléfono'] 
+                               if col in df_distrifarma.columns]
             if columnas_mostrar:
                 print(f"   Ejemplo de datos procesados:")
                 print(f"      {df_distrifarma[columnas_mostrar].head(3).to_string()}")
@@ -2481,13 +2596,28 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             else:
                 df_libro2['Nombre Vehiculo'] = ''
             
-            # Título de la Visita = Persona de Contacto - CEDULA
-            df_libro2['Título de la Visita'] = df_distrifarma.apply(
-                lambda row: f"{row['Persona de Contacto']} - {row['CEDULA']}" 
-                          if pd.notna(row['Persona de Contacto']) and pd.notna(row['CEDULA'])
-                          else (row['Persona de Contacto'] if pd.notna(row['Persona de Contacto']) else str(row['CEDULA'])),
-                axis=1
-            )
+            # Título de la Visita
+            # Formato antiguo: Persona de Contacto - CEDULA
+            # Formato Carmen: Persona de Contacto - Teléfono (si no hay CEDULA)
+            if 'CEDULA' in df_distrifarma.columns and 'Persona de Contacto' in df_distrifarma.columns:
+                # Formato antiguo con CEDULA
+                df_libro2['Título de la Visita'] = df_distrifarma.apply(
+                    lambda row: f"{row['Persona de Contacto']} - {row['CEDULA']}" 
+                              if pd.notna(row['Persona de Contacto']) and pd.notna(row['CEDULA'])
+                              else (str(row['Persona de Contacto']) if pd.notna(row['Persona de Contacto']) else ''),
+                    axis=1
+                )
+            elif 'Persona de Contacto' in df_distrifarma.columns and 'Teléfono' in df_distrifarma.columns:
+                # Formato Carmen: usar Persona de Contacto - Teléfono
+                df_libro2['Título de la Visita'] = df_distrifarma.apply(
+                    lambda row: f"{row['Persona de Contacto']} - {row['Teléfono']}" 
+                              if pd.notna(row['Persona de Contacto']) and pd.notna(row['Teléfono'])
+                              else (str(row['Persona de Contacto']) if pd.notna(row['Persona de Contacto']) else ''),
+                    axis=1
+                )
+            else:
+                # Fallback: solo Persona de Contacto
+                df_libro2['Título de la Visita'] = df_distrifarma['Persona de Contacto'] if 'Persona de Contacto' in df_distrifarma.columns else ''
             
             # Dirección - agregar municipio al final
             # Combinar dirección original + ", " + municipio extraído del titulo de la visita
