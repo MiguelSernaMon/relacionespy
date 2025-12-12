@@ -788,7 +788,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                     </ul>
                 </li>
                 <li><strong>Detección Automática:</strong> El sistema detecta automáticamente el formato del archivo</li>
-                <li><strong>Nombre Vehículo:</strong> Normalizado con primera letra mayúscula ("VEHICULO 1" → "Vehiculo 1")</li>
+                <li><strong>Nombre Vehículo:</strong> Se conserva el valor original del archivo</li>
                 <li><strong>Título Visita:</strong> Persona de Contacto + " - " + CEDULA (o Teléfono en formato Carmen)</li>
                 <li><strong>Dirección:</strong> Dirección original + ", " + Municipio (extraído de "Titulo de la Visita")</li>
                 <li><strong>ID Referencia:</strong> "Diswifarma-" + ID original (si es solo números)</li>
@@ -2579,20 +2579,9 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             # Crear DataFrame con estructura de Libro2
             df_libro2 = pd.DataFrame()
             
-            # Nombre Vehículo - normalizar primera letra en mayúscula
-            # Convertir "VEHICULO 1" a "Vehiculo 1"
-            def normalizar_nombre_vehiculo(nombre):
-                if pd.isna(nombre):
-                    return ''
-                nombre_str = str(nombre).strip()
-                # Aplicar capitalize a cada palabra (primera letra mayúscula, resto minúscula)
-                # Pero mantener números intactos
-                palabras = nombre_str.split()
-                palabras_normalizadas = [palabra.capitalize() if palabra.isalpha() else palabra for palabra in palabras]
-                return ' '.join(palabras_normalizadas)
-            
+            # Nombre Vehículo - conservar valor original (solo limpiar espacios)
             if 'Nombre Vehiculo' in df_distrifarma.columns:
-                df_libro2['Nombre Vehiculo'] = df_distrifarma['Nombre Vehiculo'].apply(normalizar_nombre_vehiculo)
+                df_libro2['Nombre Vehiculo'] = df_distrifarma['Nombre Vehiculo'].astype(str).str.strip()
             else:
                 df_libro2['Nombre Vehiculo'] = ''
             
