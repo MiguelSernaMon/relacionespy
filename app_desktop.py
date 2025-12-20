@@ -3,12 +3,11 @@
 """
 Creador de Relaciones Mailbox - Versión Escritorio
 ===================================================
-Aplicación de escritorio con interfaz gráfica moderna.
-Abre automáticamente en el navegador predeterminado.
+Ejecuta el servidor y abre la aplicación en el navegador.
 
 Para compilar a .exe en Windows:
     pip install pyinstaller pandas openpyxl
-    pyinstaller --onefile --windowed --name "CreadorRelaciones" app_desktop.py
+    pyinstaller --onefile --name "CreadorRelaciones" app_desktop.py
 """
 
 import os
@@ -23,14 +22,6 @@ import base64
 import pandas as pd
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import cgi
-import traceback
-
-# Intentar importar webview (opcional)
-try:
-    import webview
-    WEBVIEW_AVAILABLE = True
-except ImportError:
-    WEBVIEW_AVAILABLE = False
 
 # Variable global para el servidor
 server_instance = None
@@ -886,49 +877,14 @@ def start_server(port):
     server_instance.serve_forever()
 
 
-def show_tray_window():
-    """Muestra una ventana de sistema simple para mantener la app visible"""
-    try:
-        import tkinter as tk
-        from tkinter import messagebox
-        
-        root = tk.Tk()
-        root.title("Creador de Relaciones Mailbox")
-        root.geometry("400x200")
-        root.configure(bg='#667eea')
-        
-        # Centrar ventana
-        root.eval('tk::PlaceWindow . center')
-        
-        label = tk.Label(
-            root, 
-            text="🚀 Creador de Relaciones Mailbox\n\nLa aplicación está corriendo en tu navegador.\n\nNo cierres esta ventana.",
-            font=('Segoe UI', 12),
-            bg='#667eea',
-            fg='white',
-            justify='center'
-        )
-        label.pack(expand=True)
-        
-        def on_closing():
-            if messagebox.askokcancel("Cerrar", "¿Deseas cerrar la aplicación?"):
-                root.destroy()
-                os._exit(0)
-        
-        root.protocol("WM_DELETE_WINDOW", on_closing)
-        root.mainloop()
-        
-    except Exception as e:
-        # Si tkinter falla, mantener con sleep
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            pass
-
-
 def main():
     """Función principal"""
+    print()
+    print("=" * 50)
+    print("  🚀 CREADOR DE RELACIONES MAILBOX")
+    print("=" * 50)
+    print()
+    
     # Encontrar puerto libre
     port = find_free_port()
     url = f'http://127.0.0.1:{port}'
@@ -941,23 +897,27 @@ def main():
     # Esperar un momento para que el servidor inicie
     time.sleep(0.5)
     
-    if WEBVIEW_AVAILABLE:
-        # Crear ventana nativa con PyWebView
-        webview.create_window(
-            'Creador de Relaciones Mailbox',
-            url,
-            width=900,
-            height=750,
-            resizable=True,
-            min_size=(600, 500)
-        )
-        webview.start()
-    else:
-        # Abrir en navegador predeterminado
-        webbrowser.open(url)
-        
-        # Mostrar ventana de control con tkinter
-        show_tray_window()
+    # Abrir en navegador
+    print(f"  📍 Servidor iniciado en: {url}")
+    print()
+    print("  🌐 Abriendo navegador...")
+    webbrowser.open(url)
+    
+    print()
+    print("  ✅ ¡Aplicación lista!")
+    print()
+    print("  ⚠️  NO CIERRES ESTA VENTANA")
+    print("      (La aplicación dejará de funcionar)")
+    print()
+    print("  Presiona Ctrl+C para cerrar")
+    print("=" * 50)
+    
+    # Mantener corriendo
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\n\n  👋 ¡Hasta luego!")
 
 
 if __name__ == '__main__':
