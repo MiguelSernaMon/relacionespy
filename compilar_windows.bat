@@ -28,11 +28,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Intentar instalar pywebview (opcional, puede fallar)
-echo Instalando pywebview (opcional)...
-pip install pywebview 2>nul
-echo (Si pywebview fallo, la app abrira en el navegador)
-
 echo.
 echo [2/4] Verificando archivos...
 if not exist "app_desktop.py" (
@@ -46,7 +41,7 @@ echo [3/4] Compilando aplicación...
 echo Esto puede tardar unos minutos...
 echo.
 
-pyinstaller --onefile --windowed --name "CreadorRelaciones" app_desktop.py
+pyinstaller --onefile --name "CreadorRelaciones" app_desktop.py
 
 if errorlevel 1 (
     echo [ERROR] Error durante la compilación
