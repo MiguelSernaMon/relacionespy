@@ -698,48 +698,13 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         <div style="margin-bottom: 20px;">
             <label class="file-label" for="modoSelector">🔧 Selecciona el modo de operación:</label>
             <select id="modoSelector" class="file-input" style="padding: 12px;">
-                <option value="normal">Modo Normal (Madre + Ofimatic)</option>
-                <option value="bogota">Modo Bogotá (Relacionar por NIT)</option>
-                <option value="filtrar_bogota">Filtrar Bogotá (Solo B-BOGOTA y B-SOACHA)</option>
                 <option value="medellin_libro2">Medellín → Libro2 (Formato Ruteo)</option>
                 <option value="bogota_libro2">Bogotá → Libro2 (Formato Ruteo)</option>
-                <option value="farmabogota_libro2">FarmaBogota → Libro2 (Formato Ruteo)</option>
                 <option value="distrifarma_libro2">Distrifarma → Libro2 (Transformar)</option>
             </select>
         </div>
         
-        <div class="info-box" id="infoNormal">
-            <h3>📋 Formato de archivos soportados (Modo Normal):</h3>
-            <ul>
-                <li><strong>Formatos:</strong> CSV (.csv), Excel (.xlsx, .xls)</li>
-                <li><strong>Planilla Madre:</strong> Debe tener columnas identificationPatient e idOrder</li>
-                <li><strong>Planilla Ofimatic:</strong> Las primeras 4 filas se omiten automáticamente, debe tener columnas nit y Nrodcto</li>
-                <li><strong>CSV:</strong> Se detecta automáticamente el separador (punto y coma o coma)</li>
-                <li><strong>Resultado:</strong> Archivo Excel (.xlsx) con filtros automáticos y formato preservado</li>
-            </ul>
-        </div>
-        
-        <div class="info-box" id="infoBogota" style="display: none;">
-            <h3>📋 Formato de archivos soportados (Modo Bogotá):</h3>
-            <ul>
-                <li><strong>Planilla Inicial Bogotá:</strong> Archivo Excel con formato base</li>
-                <li><strong>Planilla de Pedidos:</strong> Excel con columnas IDENTIFICACION y NUMERO DE PEDIDO</li>
-                <li><strong>Proceso:</strong> Relaciona por NIT y actualiza Nrodcto a formato: Nrodcto-NUMERO_PEDIDO</li>
-                <li><strong>Resultado:</strong> Excel con el mismo formato de Planilla Inicial Bogotá</li>
-            </ul>
-        </div>
-        
-        <div class="info-box" id="infoFiltrarBogota" style="display: none;">
-            <h3>📋 Filtrar pedidos de Bogotá (Solo B-BOGOTA y B-SOACHA):</h3>
-            <ul>
-                <li><strong>Archivo:</strong> PLANILLAS OFMATIC BOGOTA.xlsx (o similar)</li>
-                <li><strong>Proceso:</strong> Filtra solo los pedidos con Destino = "B-BOGOTA" o "B-SOACHA"</li>
-                <li><strong>Resultado:</strong> Excel filtrado con el mismo formato original</li>
-                <li><strong>Nota:</strong> Solo necesitas seleccionar UN archivo</li>
-            </ul>
-        </div>
-        
-        <div class="info-box" id="infoMedellinLibro2" style="display: none;">
+        <div class="info-box" id="infoMedellinLibro2">
             <h3>📋 Medellín → Libro2 (Formato Ruteo):</h3>
             <ul>
                 <li><strong>Planilla Madre:</strong> CSV o Excel con datos de Medellín (identificationPatient, idOrder, addressPatient, phonePatient, cityNameOrder)</li>
@@ -765,19 +730,6 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             </ul>
         </div>
 
-        <div class="info-box" id="infoFarmaBogotaLibro2" style="display: none;">
-            <h3>📋 FarmaBogota → Libro2 (Formato Ruteo):</h3>
-            <ul>
-                <li><strong>Archivo FarmaBogota:</strong> Excel con columnas PACIENTE, NUMERO DE PEDIDO, DIRECCION DE ENTREGA, CELULAR, CIUDAD DE ENTREGA, DOCUMENTO ASOCIADO</li>
-                <li><strong>Proceso:</strong> Transforma al formato Libro2.xlsx para ruteo</li>
-                <li><strong>Resultado:</strong> Excel con formato: Nombre Vehículo, Título de la Visita, Dirección, ID Referencia, Teléfono, etc.</li>
-                <li><strong>Título Visita:</strong> Campo PACIENTE</li>
-                <li><strong>Dirección:</strong> DIRECCION DE ENTREGA + ", " + CIUDAD DE ENTREGA</li>
-                <li><strong>ID Referencia:</strong> DOCUMENTO ASOCIADO + "-" + NUMERO DE PEDIDO</li>
-                <li><strong>Teléfono:</strong> CELULAR (limpiando .0 y validando)</li>
-            </ul>
-        </div>
-
         <div class="info-box" id="infoDistrifarmaLibro2" style="display: none;">
             <h3>📋 Distrifarma → Libro2 (Transformar):</h3>
             <ul>
@@ -788,7 +740,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                     </ul>
                 </li>
                 <li><strong>Detección Automática:</strong> El sistema detecta automáticamente el formato del archivo</li>
-                <li><strong>Nombre Vehículo:</strong> Normalizado con primera letra mayúscula ("VEHICULO 1" → "Vehiculo 1")</li>
+                <li><strong>Nombre Vehículo:</strong> Se conserva el valor original del archivo</li>
                 <li><strong>Título Visita:</strong> Persona de Contacto + " - " + CEDULA (o Teléfono en formato Carmen)</li>
                 <li><strong>Dirección:</strong> Dirección original + ", " + Municipio (extraído de "Titulo de la Visita")</li>
                 <li><strong>ID Referencia:</strong> "Diswifarma-" + ID original (si es solo números)</li>
@@ -835,51 +787,26 @@ class MailboxHandler(SimpleHTTPRequestHandler):
         const loading = document.getElementById('loading');
         const result = document.getElementById('result');
         const infoNormal = document.getElementById('infoNormal');
-        const infoBogota = document.getElementById('infoBogota');
-        const infoFiltrarBogota = document.getElementById('infoFiltrarBogota');
         const infoMedellinLibro2 = document.getElementById('infoMedellinLibro2');
         const infoBogotaLibro2 = document.getElementById('infoBogotaLibro2');
-        const infoFarmaBogotaLibro2 = document.getElementById('infoFarmaBogotaLibro2');
         const infoDistrifarmaLibro2 = document.getElementById('infoDistrifarmaLibro2');
         
-        // Cambiar etiquetas y descripciones según el modo
-        modoSelector.addEventListener('change', () => {
+        // Inicializar con modo Medellín por defecto
+        function initializeMode() {
             const modo = modoSelector.value;
-            if (modo === 'bogota') {
-                madreLabel.textContent = '1️⃣ Planilla Inicial Bogotá (.xlsx)';
-                ofimaticLabel.textContent = '2️⃣ Planilla de Pedidos (.xlsx)';
-                document.getElementById('madreSection').style.display = 'block';
-                document.getElementById('ofimaticSection').style.display = 'block';
-                infoNormal.style.display = 'none';
-                infoBogota.style.display = 'block';
-                infoFiltrarBogota.style.display = 'none';
-                infoMedellinLibro2.style.display = 'none';
-                infoBogotaLibro2.style.display = 'none';
-                processBtn.textContent = '3️⃣ ¡RELACIONAR PLANILLAS BOGOTÁ!';
-                madreFile.required = true;
-                ofimaticFile.required = true;
-            } else if (modo === 'filtrar_bogota') {
-                madreLabel.textContent = '1️⃣ Planilla Ofimatic Bogotá (.xlsx)';
-                document.getElementById('madreSection').style.display = 'block';
-                document.getElementById('ofimaticSection').style.display = 'none';
-                infoNormal.style.display = 'none';
-                infoBogota.style.display = 'none';
-                infoFiltrarBogota.style.display = 'block';
-                infoMedellinLibro2.style.display = 'none';
-                infoBogotaLibro2.style.display = 'none';
-                processBtn.textContent = '2️⃣ ¡FILTRAR PEDIDOS BOGOTÁ!';
-                madreFile.required = true;
-                ofimaticFile.required = false;
-            } else if (modo === 'medellin_libro2') {
+            updateModeUI(modo);
+        }
+        
+        // Cambiar etiquetas y descripciones según el modo
+        function updateModeUI(modo) {
+            if (modo === 'medellin_libro2') {
                 madreLabel.textContent = '1️⃣ Planilla Madre Medellín (.csv/.xlsx)';
                 ofimaticLabel.textContent = '2️⃣ Planilla Ofimatic (.xlsx)';
                 document.getElementById('madreSection').style.display = 'block';
                 document.getElementById('ofimaticSection').style.display = 'block';
-                infoNormal.style.display = 'none';
-                infoBogota.style.display = 'none';
-                infoFiltrarBogota.style.display = 'none';
                 infoMedellinLibro2.style.display = 'block';
                 infoBogotaLibro2.style.display = 'none';
+                infoDistrifarmaLibro2.style.display = 'none';
                 processBtn.textContent = '3️⃣ ¡GENERAR ARCHIVO LIBRO2!';
                 madreFile.required = true;
                 ofimaticFile.required = true;
@@ -888,60 +815,28 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 ofimaticLabel.textContent = '2️⃣ Planilla Ofimatic Bogotá (.xlsx)';
                 document.getElementById('madreSection').style.display = 'block';
                 document.getElementById('ofimaticSection').style.display = 'block';
-                infoNormal.style.display = 'none';
-                infoBogota.style.display = 'none';
-                infoFiltrarBogota.style.display = 'none';
                 infoMedellinLibro2.style.display = 'none';
                 infoBogotaLibro2.style.display = 'block';
-                infoFarmaBogotaLibro2.style.display = 'none';
                 infoDistrifarmaLibro2.style.display = 'none';
                 processBtn.textContent = '3️⃣ ¡GENERAR ARCHIVO LIBRO2 BOGOTÁ!';
                 madreFile.required = true;
                 ofimaticFile.required = true;
-            } else if (modo === 'farmabogota_libro2') {
-                madreLabel.textContent = '1️⃣ Planilla FarmaBogota (.xlsx)';
-                document.getElementById('madreSection').style.display = 'block';
-                document.getElementById('ofimaticSection').style.display = 'none';
-                infoNormal.style.display = 'none';
-                infoBogota.style.display = 'none';
-                infoFiltrarBogota.style.display = 'none';
-                infoMedellinLibro2.style.display = 'none';
-                infoBogotaLibro2.style.display = 'none';
-                infoFarmaBogotaLibro2.style.display = 'block';
-                infoDistrifarmaLibro2.style.display = 'none';
-                processBtn.textContent = '2️⃣ ¡GENERAR ARCHIVO LIBRO2 FARMABOGOTA!';
-                madreFile.required = true;
-                ofimaticFile.required = false;
             } else if (modo === 'distrifarma_libro2') {
                 madreLabel.textContent = '1️⃣ Archivo Distrifarma (.xlsx)';
                 document.getElementById('madreSection').style.display = 'block';
                 document.getElementById('ofimaticSection').style.display = 'none';
-                infoNormal.style.display = 'none';
-                infoBogota.style.display = 'none';
-                infoFiltrarBogota.style.display = 'none';
                 infoMedellinLibro2.style.display = 'none';
                 infoBogotaLibro2.style.display = 'none';
-                infoFarmaBogotaLibro2.style.display = 'none';
                 infoDistrifarmaLibro2.style.display = 'block';
                 processBtn.textContent = '2️⃣ ¡TRANSFORMAR ARCHIVO DISTRIFARMA!';
                 madreFile.required = true;
                 ofimaticFile.required = false;
-            } else {
-                madreLabel.textContent = '1️⃣ Planilla Madre (.csv/.xlsx/.xls)';
-                ofimaticLabel.textContent = '2️⃣ Planilla Ofimatic (.csv/.xlsx/.xls)';
-                document.getElementById('madreSection').style.display = 'block';
-                document.getElementById('ofimaticSection').style.display = 'block';
-                infoNormal.style.display = 'block';
-                infoBogota.style.display = 'none';
-                infoFiltrarBogota.style.display = 'none';
-                infoMedellinLibro2.style.display = 'none';
-                infoBogotaLibro2.style.display = 'none';
-                infoFarmaBogotaLibro2.style.display = 'none';
-                infoDistrifarmaLibro2.style.display = 'none';
-                processBtn.textContent = '3️⃣ ¡GENERAR ARCHIVO COMBINADO!';
-                madreFile.required = true;
-                ofimaticFile.required = true;
             }
+        }
+        
+        modoSelector.addEventListener('change', () => {
+            const modo = modoSelector.value;
+            updateModeUI(modo);
             // Reset archivos
             madreFile.value = '';
             ofimaticFile.value = '';
@@ -952,8 +847,8 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             checkFormReady();
         });
         
-        // Escuchar cambios en el modo también
-        modoSelector.addEventListener('change', checkFormReady);
+        // Inicializar UI al cargar la página
+        initializeMode();
         
         function updateFileStatus(fileInput, statusDiv, sectionDiv) {
             const file = fileInput.files[0];
@@ -974,11 +869,11 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             const madreReady = madreFile.files.length > 0;
             const ofimaticReady = ofimaticFile.files.length > 0;
             
-            // Modos que solo requieren un archivo
-            if (modo === 'filtrar_bogota' || modo === 'farmabogota_libro2' || modo === 'distrifarma_libro2') {
+            // Distrifarma solo requiere un archivo
+            if (modo === 'distrifarma_libro2') {
                 processBtn.disabled = !madreReady;
             } else {
-                // Modos que requieren ambos archivos
+                // Medellín y Bogotá requieren ambos archivos
                 processBtn.disabled = !(madreReady && ofimaticReady);
             }
         }
@@ -997,7 +892,7 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             const modo = modoSelector.value;
             
             // Validar según el modo
-            if (modo === 'filtrar_bogota' || modo === 'farmabogota_libro2' || modo === 'distrifarma_libro2') {
+            if (modo === 'distrifarma_libro2') {
                 if (!madreFile.files[0]) {
                     alert('Por favor, selecciona el archivo requerido.');
                     return;
@@ -1018,17 +913,12 @@ class MailboxHandler(SimpleHTTPRequestHandler):
                 let url = '/process';
                 const formData = new FormData();
                 
-                if (modo === 'farmabogota_libro2') {
-                    url = '/process_farmabogota_libro2';
-                    formData.append('file', madreFile.files[0]);
-                } else if (modo === 'distrifarma_libro2') {
+                if (modo === 'distrifarma_libro2') {
                     url = '/process_distrifarma_libro2';
                     formData.append('file', madreFile.files[0]);
                 } else {
                     formData.append('madre', madreFile.files[0]);
-                    if (modo !== 'filtrar_bogota' && ofimaticFile.files[0]) {
-                        formData.append('ofimatic', ofimaticFile.files[0]);
-                    }
+                    formData.append('ofimatic', ofimaticFile.files[0]);
                     formData.append('modo', modo);
                 }
                 
@@ -2579,20 +2469,9 @@ class MailboxHandler(SimpleHTTPRequestHandler):
             # Crear DataFrame con estructura de Libro2
             df_libro2 = pd.DataFrame()
             
-            # Nombre Vehículo - normalizar primera letra en mayúscula
-            # Convertir "VEHICULO 1" a "Vehiculo 1"
-            def normalizar_nombre_vehiculo(nombre):
-                if pd.isna(nombre):
-                    return ''
-                nombre_str = str(nombre).strip()
-                # Aplicar capitalize a cada palabra (primera letra mayúscula, resto minúscula)
-                # Pero mantener números intactos
-                palabras = nombre_str.split()
-                palabras_normalizadas = [palabra.capitalize() if palabra.isalpha() else palabra for palabra in palabras]
-                return ' '.join(palabras_normalizadas)
-            
+            # Nombre Vehículo - conservar valor original (solo limpiar espacios)
             if 'Nombre Vehiculo' in df_distrifarma.columns:
-                df_libro2['Nombre Vehiculo'] = df_distrifarma['Nombre Vehiculo'].apply(normalizar_nombre_vehiculo)
+                df_libro2['Nombre Vehiculo'] = df_distrifarma['Nombre Vehiculo'].astype(str).str.strip()
             else:
                 df_libro2['Nombre Vehiculo'] = ''
             
