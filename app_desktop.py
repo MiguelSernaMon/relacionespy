@@ -3,11 +3,11 @@
 """
 Creador de Relaciones Mailbox - Versión Escritorio
 ===================================================
-Aplicación de escritorio con interfaz gráfica moderna usando PyWebView.
-Muestra la misma interfaz web en una ventana nativa de Windows/Mac/Linux.
+Aplicación de escritorio con interfaz gráfica moderna.
+Abre automáticamente en el navegador predeterminado.
 
 Para compilar a .exe en Windows:
-    pip install pyinstaller pywebview pandas openpyxl
+    pip install pyinstaller pandas openpyxl
     pyinstaller --onefile --windowed --name "CreadorRelaciones" app_desktop.py
 """
 
@@ -15,6 +15,8 @@ import os
 import sys
 import threading
 import socket
+import webbrowser
+import time
 from io import BytesIO, StringIO
 import json
 import base64
@@ -23,13 +25,12 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 import cgi
 import traceback
 
-# Intentar importar webview
+# Intentar importar webview (opcional)
 try:
     import webview
     WEBVIEW_AVAILABLE = True
 except ImportError:
     WEBVIEW_AVAILABLE = False
-    print("⚠️ PyWebView no está instalado. Instálalo con: pip install pywebview")
 
 # Variable global para el servidor
 server_instance = None
@@ -885,6 +886,47 @@ def start_server(port):
     server_instance.serve_forever()
 
 
+def show_tray_window():
+    """Muestra una ventana de sistema simple para mantener la app visible"""
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        
+        root = tk.Tk()
+        root.title("Creador de Relaciones Mailbox")
+        root.geometry("400x200")
+        root.configure(bg='#667eea')
+        
+        # Centrar ventana
+        root.eval('tk::PlaceWindow . center')
+        
+        label = tk.Label(
+            root, 
+            text="🚀 Creador de Relaciones Mailbox\n\nLa aplicación está corriendo en tu navegador.\n\nNo cierres esta ventana.",
+            font=('Segoe UI', 12),
+            bg='#667eea',
+            fg='white',
+            justify='center'
+        )
+        label.pack(expand=True)
+        
+        def on_closing():
+            if messagebox.askokcancel("Cerrar", "¿Deseas cerrar la aplicación?"):
+                root.destroy()
+                os._exit(0)
+        
+        root.protocol("WM_DELETE_WINDOW", on_closing)
+        root.mainloop()
+        
+    except Exception as e:
+        # Si tkinter falla, mantener con sleep
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            pass
+
+
 def main():
     """Función principal"""
     # Encontrar puerto libre
@@ -895,6 +937,9 @@ def main():
     global server_thread
     server_thread = threading.Thread(target=start_server, args=(port,), daemon=True)
     server_thread.start()
+    
+    # Esperar un momento para que el servidor inicie
+    time.sleep(0.5)
     
     if WEBVIEW_AVAILABLE:
         # Crear ventana nativa con PyWebView
@@ -908,19 +953,11 @@ def main():
         )
         webview.start()
     else:
-        # Si no hay PyWebView, abrir en navegador
-        import webbrowser
-        print(f"🌐 Abriendo en navegador: {url}")
-        print("💡 Para una mejor experiencia, instala: pip install pywebview")
+        # Abrir en navegador predeterminado
         webbrowser.open(url)
         
-        # Mantener el servidor corriendo
-        try:
-            while True:
-                import time
-                time.sleep(1)
-        except KeyboardInterrupt:
-            print("\n👋 Cerrando servidor...")
+        # Mostrar ventana de control con tkinter
+        show_tray_window()
 
 
 if __name__ == '__main__':

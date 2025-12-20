@@ -20,13 +20,18 @@ if errorlevel 1 (
 )
 
 echo [1/4] Instalando dependencias...
-pip install pyinstaller pywebview pandas openpyxl
+pip install pyinstaller pandas openpyxl
 
 if errorlevel 1 (
     echo [ERROR] Error al instalar dependencias
     pause
     exit /b 1
 )
+
+REM Intentar instalar pywebview (opcional, puede fallar)
+echo Instalando pywebview (opcional)...
+pip install pywebview 2>nul
+echo (Si pywebview fallo, la app abrira en el navegador)
 
 echo.
 echo [2/4] Verificando archivos...
