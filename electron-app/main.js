@@ -664,8 +664,10 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
     ehlpharmaData.forEach(row => {
       const identificacion = normalizarNit(row['IDENTIFICACION']) || normalizarNit(row['identificationPatient']);
       const numeroPedido = row['NUMERO DE PEDIDO'] || row['idOrder'] || '';
-      const telefonoPaciente = row['mobilePhonePatient'] || '';
-      const direccionPaciente = row['addressPatient'] || '';
+      // Para Bogotá, buscar columna CELULAR (feedback del usuario)
+      const telefonoPaciente = row['CELULAR'] || row['mobilePhonePatient'] || '';
+      // Para Bogotá, buscar columna DIRECCION DE ENTREGA (feedback del usuario)
+      const direccionPaciente = row['DIRECCION DE ENTREGA'] || row['addressPatient'] || '';
       if (identificacion && numeroPedido) {
         mapeoIdOrder[identificacion] = numeroPedido;
       }
