@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Creador de Relaciones Mailbox</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Creador de Relaciones Mailbox</h1>
+            <p>Transforma planillas al formato Libro2 de manera fácil y rápida</p>
+        </div>
+        
+        <!-- Selector de Modo -->
+        <div class="mode-selector">
+            <div class="mode-selector-header">
+                <div class="mode-selector-label">
+                    🔧 Selecciona el modo de operación:
+                    <span id="modeIndicator" class="mode-indicator medellin">MEDELLÍN</span>
+                </div>
+            </div>
+            <select id="modoSelector" class="select-input">
+                <option value="medellin">Medellín → Libro2 (Formato Ruteo)</option>
+                <option value="bogota">Bogotá → Libro2 (Formato Ruteo)</option>
+                <option value="distrifarma">Distrifarma → Libro2 (Transformar)</option>
+            </select>
+        </div>
+        
+        <!-- Info Boxes -->
+        <div class="info-box" id="infoMedellin">
+            <h3>📋 Medellín → Libro2:</h3>
+            <ul>
+                <li><strong>Planilla Madre:</strong> CSV o Excel con datos de Medellín (identificationPatient, idOrder)</li>
+                <li><strong>Planilla Ofimatic:</strong> Excel con nit, Nrodcto, NOMBRE, DIRECCION, etc.</li>
+                <li><strong>Resultado:</strong> Excel formato Libro2 para ruteo</li>
+            </ul>
+        </div>
+        
+        <div class="info-box" id="infoBogota" style="display: none;">
+            <h3>📋 Bogotá → Libro2:</h3>
+            <ul>
+                <li><strong>Planilla Ehlpharma:</strong> Excel con datos de Bogotá (IDENTIFICACION, NUMERO DE PEDIDO)</li>
+                <li><strong>Planilla Ofimatic:</strong> Excel con nit, Nrodcto, NOMBRE, DIRECCION, etc.</li>
+                <li><strong>Resultado:</strong> Excel formato Libro2 para Cundinamarca</li>
+            </ul>
+        </div>
+        
+        <div class="info-box" id="infoDistrifarma" style="display: none;">
+            <h3>📋 Distrifarma → Libro2:</h3>
+            <ul>
+                <li><strong>Archivo Distrifarma:</strong> Excel con cualquier formato</li>
+                <li><strong>Detección Automática:</strong> Detecta formato antiguo o Carmen de Viboral</li>
+                <li><strong>Resultado:</strong> Excel formato Libro2 estándar</li>
+            </ul>
+        </div>
+        
+        <!-- Panel de Planillas Madre en Caché -->
+        <div class="cache-panel" id="cachePanel">
+            <div class="cache-header">
+                <h3>📦 Planillas Madre Cargadas <span class="cache-badge" id="cacheBadge">0</span></h3>
+                <span class="cache-subtitle">Permanecen guardadas hasta que las elimines — los datos más recientes tienen prioridad</span>
+            </div>
+            <div class="cache-list" id="cacheList">
+                <div class="cache-empty" id="cacheEmpty">
+                    <span>🔍 No hay planillas madre cargadas aún</span>
+                    <small>Al procesar Medellín o Bogotá, las planillas se guardan automáticamente</small>
+                </div>
+            </div>
+            <div class="cache-actions" id="cacheActions">
+                <button class="cache-add-btn" id="addToCacheBtn">➕ Agregar Planilla Madre</button>
+                <button class="cache-clear-btn" id="clearCacheBtn" style="display: none;">🗑️ Limpiar todo el caché</button>
+            </div>
+        </div>
+
+        <!-- Archivos -->
+        <div id="formContainer">
+            <div class="file-section" id="file1Section">
+                <label class="file-label" id="file1Label">1️⃣ Planilla Madre Medellín (.csv/.xlsx)</label>
+                <button class="file-button" id="selectFile1">
+                    📁 Seleccionar Archivo
+                </button>
+                <div id="file1Status" class="file-status" style="display: none;"></div>
+            </div>
+            
+            <div class="file-section" id="file2Section">
+                <label class="file-label" id="file2Label">2️⃣ Planilla Ofimatic (.xlsx)</label>
+                <button class="file-button" id="selectFile2">
+                    📁 Seleccionar Archivo
+                </button>
+                <div id="file2Status" class="file-status" style="display: none;"></div>
+            </div>
+            
+            <div class="file-section" id="outputFolderSection">
+                <label class="file-label">📂 Carpeta de destino (opcional - por defecto: Descargas)</label>
+                <button class="file-button secondary-button" id="selectOutputFolder">
+                    📂 Seleccionar Carpeta
+                </button>
+                <div id="outputFolderStatus" class="file-status" style="display: none;"></div>
+            </div>
+            
+            <button class="process-btn" id="processBtn" disabled>
+                ¡GENERAR ARCHIVO LIBRO2!
+            </button>
+        </div>
+        
+        <div class="loading" id="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>🔄 Procesando archivos...</p>
+        </div>
+        
+        <div class="result-section" id="result" style="display: none;">
+            <div id="resultContent"></div>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>

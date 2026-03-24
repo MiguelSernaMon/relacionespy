@@ -1,0 +1,57 @@
+{
+  "name": "creador-relaciones-bogota",
+  "version": "1.0.0",
+  "description": "Creador de Relaciones Mailbox - Bogotá Edition",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64",
+    "build-portable": "electron-builder --win portable --x64",
+    "pack": "electron-builder --dir"
+  },
+  "keywords": [
+    "mailbox",
+    "bogota",
+    "excel",
+    "electron"
+  ],
+  "author": "Miguel Serna",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  },
+  "build": {
+    "appId": "com.mailbox.creador-relaciones-bogota",
+    "productName": "Creador Relaciones Bogotá",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "**/*",
+      "!**/.git/**/*",
+      "!**/*.md",
+      "!node_modules/**/*",
+      "node_modules/xlsx/**/*"
+    ]
+  }
+}

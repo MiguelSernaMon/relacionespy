@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Creador de Relaciones - Bogotá</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Creador de Relaciones Mailbox</h1>
+            <p>Bogotá → Libro2 (Formato Ruteo)</p>
+        </div>
+        
+        <div class="info-box">
+            <h3>📋 Modo: Bogotá → Libro2</h3>
+            <ul>
+                <li><strong>Planilla Ehlpharma:</strong> Excel con datos de Bogotá (IDENTIFICACION, NUMERO DE PEDIDO)</li>
+                <li><strong>Planilla Ofimatic:</strong> Excel con nit, Nrodcto, NOMBRE, DIRECCION, etc.</li>
+                <li><strong>Resultado:</strong> Excel formato Libro2 para Cundinamarca</li>
+            </ul>
+        </div>
+        
+        <div class="file-section" id="ehlpharmaSection">
+            <label class="file-label">1️⃣ Planilla Ehlpharma Bogotá (.xlsx)</label>
+            <button class="file-button" id="selectEhlpharma">
+                📁 Seleccionar Archivo
+            </button>
+            <div id="ehlpharmaStatus" class="file-status" style="display: none;"></div>
+        </div>
+        
+        <div class="file-section" id="ofimaticSection">
+            <label class="file-label">2️⃣ Planilla Ofimatic Bogotá (.xlsx)</label>
+            <button class="file-button" id="selectOfimatic">
+                📁 Seleccionar Archivo
+            </button>
+            <div id="ofimaticStatus" class="file-status" style="display: none;"></div>
+        </div>
+        
+        <button class="process-btn" id="processBtn" disabled>
+            3️⃣ ¡GENERAR ARCHIVO LIBRO2 BOGOTÁ!
+        </button>
+        
+        <div class="loading" id="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>🔄 Procesando archivos...</p>
+        </div>
+        
+        <div class="result-section" id="result" style="display: none;">
+            <div id="resultContent"></div>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>

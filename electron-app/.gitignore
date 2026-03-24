@@ -1,0 +1,43 @@
+# Dependencias
+node_modules/
+package-lock.json
+
+# Build outputs
+dist/
+out/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporales del generador de íconos
+assets/icon.iconset/
+
+# Archivos de prueba
+test-files/
+*.xlsx
+*.csv
+!example.xlsx
+
+# Environment
+.env
+.env.local
+
+# Windows
+desktop.ini
+
+# macOS
+.AppleDouble
+.LSOverride
+Icon
+
+# Electron
+.electron/

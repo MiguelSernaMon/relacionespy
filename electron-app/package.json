@@ -1,0 +1,102 @@
+{
+  "name": "creador-relaciones-mailbox",
+  "version": "1.0.0",
+  "description": "Creador de Relaciones Mailbox - Transforma planillas al formato Libro2",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "generate-icons": "python3 generate-icons.py",
+    "build": "electron-builder --win --x64",
+    "build-portable": "electron-builder --win portable --x64",
+    "build-mac": "electron-builder --mac",
+    "build-all": "electron-builder --win --mac --x64",
+    "pack": "electron-builder --dir"
+  },
+  "keywords": [
+    "mailbox",
+    "excel",
+    "electron",
+    "medellin",
+    "bogota",
+    "distrifarma",
+    "cyberpunk"
+  ],
+  "author": "Miguel Serna",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5",
+    "xlsx-js-style": "^1.2.0"
+  },
+  "build": {
+    "appId": "com.mailbox.creador-relaciones",
+    "productName": "Creador Relaciones Mailbox",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.productivity",
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "Creador Relaciones Mailbox",
+      "icon": "assets/icon.icns",
+      "background": null,
+      "window": {
+        "width": 600,
+        "height": 400
+      }
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico"
+    },
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "**/*",
+      "!**/.git/**/*",
+      "!**/*.md",
+      "!generate-icons.py",
+      "!dist/**/*",
+      "!assets/icon.iconset/**/*",
+      "!assets/*.svg"
+    ],
+    "asar": true
+  }
+}

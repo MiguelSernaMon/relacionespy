@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Fondo con gradiente -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4F46E5;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7C3AED;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="boxGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#FCD34D;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#F59E0B;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Fondo redondeado -->
+  <rect width="512" height="512" rx="100" fill="url(#bgGradient)"/>
+  
+  <!-- Buzón de correo principal (izquierda) -->
+  <g transform="translate(80, 140)">
+    <rect x="0" y="30" width="100" height="120" rx="10" fill="url(#boxGradient)"/>
+    <path d="M 0 30 Q 50 -10, 100 30" fill="url(#boxGradient)"/>
+    <rect x="10" y="60" width="80" height="50" rx="5" fill="#fff" opacity="0.9"/>
+    <circle cx="50" cy="85" r="15" fill="#4F46E5"/>
+    <path d="M 40 85 L 50 92 L 60 85" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  
+  <!-- Buzón de correo secundario (derecha) -->
+  <g transform="translate(332, 140)">
+    <rect x="0" y="30" width="100" height="120" rx="10" fill="url(#boxGradient)"/>
+    <path d="M 0 30 Q 50 -10, 100 30" fill="url(#boxGradient)"/>
+    <rect x="10" y="60" width="80" height="50" rx="5" fill="#fff" opacity="0.9"/>
+    <circle cx="50" cy="85" r="15" fill="#7C3AED"/>
+    <path d="M 40 85 L 50 92 L 60 85" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  
+  <!-- Flechas de conexión (bidireccionales) -->
+  <g>
+    <!-- Flecha izquierda a derecha -->
+    <path d="M 190 220 Q 256 180, 322 220" stroke="#FCD34D" stroke-width="8" fill="none" stroke-linecap="round"/>
+    <polygon points="322,220 310,212 310,228" fill="#FCD34D"/>
+    
+    <!-- Flecha derecha a izquierda -->
+    <path d="M 322 260 Q 256 300, 190 260" stroke="#FCD34D" stroke-width="8" fill="none" stroke-linecap="round"/>
+    <polygon points="190,260 202,252 202,268" fill="#FCD34D"/>
+  </g>
+  
+  <!-- Documentos/archivos en el centro -->
+  <g transform="translate(220, 210)">
+    <!-- Documento 1 -->
+    <rect x="0" y="0" width="35" height="45" rx="3" fill="#fff" opacity="0.95"/>
+    <line x1="7" y1="10" x2="28" y2="10" stroke="#4F46E5" stroke-width="2"/>
+    <line x1="7" y1="18" x2="28" y2="18" stroke="#4F46E5" stroke-width="2"/>
+    <line x1="7" y1="26" x2="22" y2="26" stroke="#4F46E5" stroke-width="2"/>
+    
+    <!-- Documento 2 (ligeramente superpuesto) -->
+    <rect x="12" y="8" width="35" height="45" rx="3" fill="#fff" opacity="0.95"/>
+    <line x1="19" y1="18" x2="40" y2="18" stroke="#7C3AED" stroke-width="2"/>
+    <line x1="19" y1="26" x2="40" y2="26" stroke="#7C3AED" stroke-width="2"/>
+    <line x1="19" y1="34" x2="34" y2="34" stroke="#7C3AED" stroke-width="2"/>
+  </g>
+  
+  <!-- Excel/Tabla icono -->
+  <g transform="translate(236, 345)">
+    <rect width="40" height="40" rx="5" fill="#10B981"/>
+    <path d="M 8 8 L 32 32 M 32 8 L 8 32" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="20" cy="20" r="17" stroke="#fff" stroke-width="2" fill="none"/>
+  </g>
+  
+  <!-- Texto decorativo "R" -->
+  <text x="256" y="110" font-family="Arial, sans-serif" font-size="80" font-weight="bold" fill="#FCD34D" text-anchor="middle">R</text>
+</svg>
