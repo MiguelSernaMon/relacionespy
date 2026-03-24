@@ -543,8 +543,9 @@ ipcMain.handle('process-medellin', async (event, madrePath, ofimaticPath, output
       const direccionPaciente = row['addressPatient'] || '';
       
       // Obtener fecha del pedido - buscar en diferentes columnas posibles
+      // Para Bogotá: buscar específicamente "FECHA DE ENTREGA" (formato YYYY-MM-DD)
       let fechaPedido = null;
-      const posiblesColumnasFecha = ['shippingDateOrder', 'fecha', 'Fecha', 'FECHA', 'date', 'Date'];
+      const posiblesColumnasFecha = ['FECHA DE ENTREGA', 'FECHA_DE_ENTREGA', 'Fecha de Entrega', 'FechaDeEntrega', 'shippingDateOrder', 'fecha', 'Fecha', 'FECHA', 'date', 'Date'];
       for (const col of posiblesColumnasFecha) {
         if (row[col]) {
           fechaPedido = parsearFecha(row[col]);
@@ -791,8 +792,9 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
       const direccionPaciente = row['DIRECCION DE ENTREGA'] || row['addressPatient'] || '';
       
       // Obtener fecha del pedido - buscar en diferentes columnas posibles
+      // Para Bogotá: buscar específicamente "FECHA DE ENTREGA" (formato YYYY-MM-DD: 2026-01-23)
       let fechaPedido = null;
-      const posiblesColumnasFecha = ['shippingDateOrder', 'fecha', 'Fecha', 'FECHA', 'date', 'Date'];
+      const posiblesColumnasFecha = ['FECHA DE ENTREGA', 'FECHA_DE_ENTREGA', 'Fecha de Entrega', 'FechaDeEntrega', 'shippingDateOrder', 'fecha', 'Fecha', 'FECHA', 'date', 'Date'];
       for (const col of posiblesColumnasFecha) {
         if (row[col]) {
           fechaPedido = parsearFecha(row[col]);
