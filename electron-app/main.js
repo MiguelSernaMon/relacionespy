@@ -175,6 +175,56 @@ function normalizarNit(valor) {
   return str.trim();
 }
 
+// Función para parsear fechas en diferentes formatos
+function parsearFecha(fechaStr) {
+  if (!fechaStr) return null;
+  
+  const str = String(fechaStr).trim();
+  if (!str) return null;
+  
+  // Intentar formato DD/MM/YYYY (30/12/2025)
+  const matchDDMMYYYY = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+  if (matchDDMMYYYY) {
+    const day = parseInt(matchDDMMYYYY[1], 10);
+    const month = parseInt(matchDDMMYYYY[2], 10) - 1; // Meses en JS son 0-indexed
+    const year = parseInt(matchDDMMYYYY[3], 10);
+    return new Date(year, month, day);
+  }
+  
+  // Intentar formato MM/DD/YYYY (12/30/2025)
+  const matchMMDDYYYY = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+  if (matchMMDDYYYY) {
+    const month = parseInt(matchMMDDYYYY[1], 10) - 1;
+    const day = parseInt(matchMMDDYYYY[2], 10);
+    const year = parseInt(matchMMDDYYYY[3], 10);
+    return new Date(year, month, day);
+  }
+  
+  // Intentar formato YYYY-MM-DD
+  const matchYYYYMMDD = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+  if (matchYYYYMMDD) {
+    const year = parseInt(matchYYYYMMDD[1], 10);
+    const month = parseInt(matchYYYYMMDD[2], 10) - 1;
+    const day = parseInt(matchYYYYMMDD[3], 10);
+    return new Date(year, month, day);
+  }
+  
+  // Intentar parsear como fecha ISO
+  const date = new Date(str);
+  if (!isNaN(date.getTime())) {
+    return date;
+  }
+  
+  return null;
+}
+
+// Función para calcular diferencia en días entre dos fechas
+function diferenciaEnDias(fecha1, fecha2) {
+  if (!fecha1 || !fecha2) return Infinity;
+  const diffMs = Math.abs(fecha1.getTime() - fecha2.getTime());
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
 function formatearTelefono(telefono) {
   if (!telefono) return { formateado: '', esValido: false };
   
@@ -482,27 +532,64 @@ ipcMain.handle('process-medellin', async (event, madrePath, ofimaticPath, output
     });
     ofimaticData = limpiarDatos(ofimaticData);
     
-    // Crear mapeos desde planilla madre: idOrder, telefono, dirección
+    // Crear mapeos desde planilla madre: almacenar múltiples órdenes por identificación con sus fechas
     // Busca ambos formatos de columna (Medellín y Bogotá) para compatibilidad con caché mixto
-    const mapeoIdOrder = {};
-    const mapeoTelefono = {};
-    const mapeoDireccion = {};
+    const ordenesPorIdentificacion = {}; // { identificacion: [{idOrder, fecha, telefono, direccion}, ...] }
+    
     madreData.forEach(row => {
       const identificacion = normalizarNit(row['identificationPatient']) || normalizarNit(row['IDENTIFICACION']);
       const idOrder = row['idOrder'] || row['NUMERO DE PEDIDO'] || '';
       const telefonoPaciente = row['mobilePhonePatient'] || '';
       const direccionPaciente = row['addressPatient'] || '';
-      if (identificacion && idOrder) {
-        mapeoIdOrder[identificacion] = idOrder;
-      }
-      if (identificacion && telefonoPaciente) {
-        const resultadoTel = formatearTelefono(telefonoPaciente);
-        if (resultadoTel.esValido) {
-          mapeoTelefono[identificacion] = resultadoTel.formateado;
+      
+      // Obtener fecha del pedido - buscar en diferentes columnas posibles
+      let fechaPedido = null;
+      const posiblesColumnasFecha = ['shippingDateOrder', 'fecha', 'Fecha', 'FECHA', 'date', 'Date'];
+      for (const col of posiblesColumnasFecha) {
+        if (row[col]) {
+          fechaPedido = parsearFecha(row[col]);
+          if (fechaPedido) break;
         }
       }
-      if (identificacion && direccionPaciente && String(direccionPaciente).trim()) {
-        mapeoDireccion[identificacion] = String(direccionPaciente).trim();
+      
+      if (identificacion && idOrder) {
+        if (!ordenesPorIdentificacion[identificacion]) {
+          ordenesPorIdentificacion[identificacion] = [];
+        }
+        
+        ordenesPorIdentificacion[identificacion].push({
+          idOrder: idOrder,
+          fecha: fechaPedido,
+          telefono: telefonoPaciente,
+          direccion: direccionPaciente
+        });
+      }
+    });
+    
+    // Crear mapeos simples para compatibilidad (telefono y dirección del pedido más reciente)
+    const mapeoTelefono = {};
+    const mapeoDireccion = {};
+    
+    Object.keys(ordenesPorIdentificacion).forEach(identificacion => {
+      const ordenes = ordenesPorIdentificacion[identificacion];
+      if (ordenes.length > 0) {
+        // Para teléfono y dirección, usar el del pedido más reciente (con fecha más reciente)
+        const ordenMasReciente = ordenes.reduce((latest, current) => {
+          if (!latest.fecha) return current;
+          if (!current.fecha) return latest;
+          return current.fecha > latest.fecha ? current : latest;
+        }, ordenes[0]);
+        
+        if (ordenMasReciente.telefono) {
+          const resultadoTel = formatearTelefono(ordenMasReciente.telefono);
+          if (resultadoTel.esValido) {
+            mapeoTelefono[identificacion] = resultadoTel.formateado;
+          }
+        }
+        
+        if (ordenMasReciente.direccion && String(ordenMasReciente.direccion).trim()) {
+          mapeoDireccion[identificacion] = String(ordenMasReciente.direccion).trim();
+        }
       }
     });
     
@@ -535,15 +622,50 @@ ipcMain.handle('process-medellin', async (event, madrePath, ofimaticPath, output
       .filter(row => esFilaValida(row)) // Filtrar filas inválidas
       .map(row => {
         const nit = normalizarNit(row['nit']);
-        const idOrderMapeado = mapeoIdOrder[nit] || '';
         
+        // Obtener fecha de la fila ofimatic (columna "fecha" con formato "12/30/2025")
+        const fechaOfimatic = parsearFecha(row['fecha'] || row['Fecha'] || row['FECHA']);
+        
+        let idOrderSeleccionado = '';
         let idOrderStr = '';
-        if (idOrderMapeado) {
-          idOrderStr = String(idOrderMapeado);
-          if (idOrderStr.endsWith('.0')) {
-            idOrderStr = idOrderStr.replace('.0', '');
+        
+        // Buscar el pedido con la fecha más cercana
+        if (ordenesPorIdentificacion[nit] && ordenesPorIdentificacion[nit].length > 0) {
+          const ordenes = ordenesPorIdentificacion[nit];
+          
+          if (fechaOfimatic) {
+            // Si tenemos fecha en ofimatic, encontrar el pedido con fecha más cercana
+            let mejorOrden = null;
+            let menorDiferencia = Infinity;
+            
+            ordenes.forEach(orden => {
+              if (orden.fecha) {
+                const diferencia = diferenciaEnDias(orden.fecha, fechaOfimatic);
+                if (diferencia < menorDiferencia) {
+                  menorDiferencia = diferencia;
+                  mejorOrden = orden;
+                }
+              }
+            });
+            
+            if (mejorOrden) {
+              idOrderSeleccionado = mejorOrden.idOrder;
+            } else {
+              // Si ninguna orden tiene fecha, usar la más reciente (última en el array)
+              idOrderSeleccionado = ordenes[ordenes.length - 1].idOrder;
+            }
+          } else {
+            // Si no hay fecha en ofimatic, usar el pedido más reciente (último en el array)
+            idOrderSeleccionado = ordenes[ordenes.length - 1].idOrder;
           }
-          pedidosRelacionados++; // Incrementar contador
+          
+          if (idOrderSeleccionado) {
+            idOrderStr = String(idOrderSeleccionado);
+            if (idOrderStr.endsWith('.0')) {
+              idOrderStr = idOrderStr.replace('.0', '');
+            }
+            pedidosRelacionados++; // Incrementar contador
+          }
         }
         
         const nrodctoRelacionado = idOrderStr 
@@ -605,7 +727,7 @@ ipcMain.handle('process-medellin', async (event, madrePath, ofimaticPath, output
     
     return {
       success: true,
-      message: `Archivo generado con ${libro2Data.length} registros. (Caché: ${madreData.length} registros madre, ${Object.keys(mapeoIdOrder).length} mapeos ID)`,
+      message: `Archivo generado con ${libro2Data.length} registros. (Caché: ${madreData.length} registros madre, ${Object.keys(ordenesPorIdentificacion).length} identificaciones con órdenes)`,
       outputPath: outputPath,
       recordCount: libro2Data.length,
       relacionados: pedidosRelacionados,
@@ -615,9 +737,9 @@ ipcMain.handle('process-medellin', async (event, madrePath, ofimaticPath, output
       cacheInfo: getCacheInfo(4),
       debug: {
         registrosEnCache: madreData.length,
-        mapeosGenerados: Object.keys(mapeoIdOrder).length,
+        identificacionesConOrdenes: Object.keys(ordenesPorIdentificacion).length,
         nitsEnOfimatic: ofimaticData.slice(0, 5).map(r => normalizarNit(r['nit'])),
-        nitsEnMadre: Object.keys(mapeoIdOrder).slice(0, 5),
+        nitsEnMadre: Object.keys(ordenesPorIdentificacion).slice(0, 5),
         columnasEnMadre: madreData.length > 0 ? Object.keys(madreData[0]) : []
       }
     };
@@ -656,11 +778,10 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
     });
     ofimaticData = limpiarDatos(ofimaticData);
     
-    // Crear mapeos desde Ehlpharma: pedido, teléfono, dirección
+    // Crear mapeos desde Ehlpharma: almacenar múltiples órdenes por identificación con sus fechas
     // Busca ambos formatos de columna (Medellín y Bogotá) para compatibilidad con caché mixto
-    const mapeoIdOrder = {};
-    const mapeoTelefono = {};
-    const mapeoDireccion = {};
+    const ordenesPorIdentificacion = {}; // { identificacion: [{idOrder, fecha, telefono, direccion}, ...] }
+    
     ehlpharmaData.forEach(row => {
       const identificacion = normalizarNit(row['IDENTIFICACION']) || normalizarNit(row['identificationPatient']);
       const numeroPedido = row['NUMERO DE PEDIDO'] || row['idOrder'] || '';
@@ -668,17 +789,55 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
       const telefonoPaciente = row['CELULAR'] || row['mobilePhonePatient'] || '';
       // Para Bogotá, buscar columna DIRECCION DE ENTREGA (feedback del usuario)
       const direccionPaciente = row['DIRECCION DE ENTREGA'] || row['addressPatient'] || '';
-      if (identificacion && numeroPedido) {
-        mapeoIdOrder[identificacion] = numeroPedido;
-      }
-      if (identificacion && telefonoPaciente) {
-        const resultadoTel = formatearTelefono(telefonoPaciente);
-        if (resultadoTel.esValido) {
-          mapeoTelefono[identificacion] = resultadoTel.formateado;
+      
+      // Obtener fecha del pedido - buscar en diferentes columnas posibles
+      let fechaPedido = null;
+      const posiblesColumnasFecha = ['shippingDateOrder', 'fecha', 'Fecha', 'FECHA', 'date', 'Date'];
+      for (const col of posiblesColumnasFecha) {
+        if (row[col]) {
+          fechaPedido = parsearFecha(row[col]);
+          if (fechaPedido) break;
         }
       }
-      if (identificacion && direccionPaciente && String(direccionPaciente).trim()) {
-        mapeoDireccion[identificacion] = String(direccionPaciente).trim();
+      
+      if (identificacion && numeroPedido) {
+        if (!ordenesPorIdentificacion[identificacion]) {
+          ordenesPorIdentificacion[identificacion] = [];
+        }
+        
+        ordenesPorIdentificacion[identificacion].push({
+          idOrder: numeroPedido,
+          fecha: fechaPedido,
+          telefono: telefonoPaciente,
+          direccion: direccionPaciente
+        });
+      }
+    });
+    
+    // Crear mapeos simples para compatibilidad (telefono y dirección del pedido más reciente)
+    const mapeoTelefono = {};
+    const mapeoDireccion = {};
+    
+    Object.keys(ordenesPorIdentificacion).forEach(identificacion => {
+      const ordenes = ordenesPorIdentificacion[identificacion];
+      if (ordenes.length > 0) {
+        // Para teléfono y dirección, usar el del pedido más reciente (con fecha más reciente)
+        const ordenMasReciente = ordenes.reduce((latest, current) => {
+          if (!latest.fecha) return current;
+          if (!current.fecha) return latest;
+          return current.fecha > latest.fecha ? current : latest;
+        }, ordenes[0]);
+        
+        if (ordenMasReciente.telefono) {
+          const resultadoTel = formatearTelefono(ordenMasReciente.telefono);
+          if (resultadoTel.esValido) {
+            mapeoTelefono[identificacion] = resultadoTel.formateado;
+          }
+        }
+        
+        if (ordenMasReciente.direccion && String(ordenMasReciente.direccion).trim()) {
+          mapeoDireccion[identificacion] = String(ordenMasReciente.direccion).trim();
+        }
       }
     });
     
@@ -711,14 +870,54 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
       .filter(row => esFilaValida(row)) // Filtrar filas inválidas
       .map(row => {
         const nit = normalizarNit(row['nit']);
-        const idOrderMapeado = mapeoIdOrder[nit] || '';
         
-        if (idOrderMapeado) {
-          pedidosRelacionados++; // Incrementar contador
+        // Obtener fecha de la fila ofimatic (columna "fecha" con formato "12/30/2025")
+        const fechaOfimatic = parsearFecha(row['fecha'] || row['Fecha'] || row['FECHA']);
+        
+        let idOrderSeleccionado = '';
+        let idOrderStr = '';
+        
+        // Buscar el pedido con la fecha más cercana
+        if (ordenesPorIdentificacion[nit] && ordenesPorIdentificacion[nit].length > 0) {
+          const ordenes = ordenesPorIdentificacion[nit];
+          
+          if (fechaOfimatic) {
+            // Si tenemos fecha en ofimatic, encontrar el pedido con fecha más cercana
+            let mejorOrden = null;
+            let menorDiferencia = Infinity;
+            
+            ordenes.forEach(orden => {
+              if (orden.fecha) {
+                const diferencia = diferenciaEnDias(orden.fecha, fechaOfimatic);
+                if (diferencia < menorDiferencia) {
+                  menorDiferencia = diferencia;
+                  mejorOrden = orden;
+                }
+              }
+            });
+            
+            if (mejorOrden) {
+              idOrderSeleccionado = mejorOrden.idOrder;
+            } else {
+              // Si ninguna orden tiene fecha, usar la más reciente (última en el array)
+              idOrderSeleccionado = ordenes[ordenes.length - 1].idOrder;
+            }
+          } else {
+            // Si no hay fecha en ofimatic, usar el pedido más reciente (último en el array)
+            idOrderSeleccionado = ordenes[ordenes.length - 1].idOrder;
+          }
+          
+          if (idOrderSeleccionado) {
+            idOrderStr = String(idOrderSeleccionado);
+            if (idOrderStr.endsWith('.0')) {
+              idOrderStr = idOrderStr.replace('.0', '');
+            }
+            pedidosRelacionados++; // Incrementar contador
+          }
         }
         
-        const nrodctoRelacionado = idOrderMapeado 
-          ? `${row['Nrodcto']}-${idOrderMapeado}`
+        const nrodctoRelacionado = idOrderStr 
+          ? `${row['Nrodcto']}-${idOrderStr}`
           : String(row['Nrodcto'] || '');
         
         // Crear título de visita con nombre y nit
