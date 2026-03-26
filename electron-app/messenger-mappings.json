@@ -1,0 +1,44 @@
+{
+  "mappings": [
+    {
+      "code": "BOGOTA01",
+      "name": "Nombre del Mensajero 1"
+    },
+    {
+      "code": "BOGOTA02",
+      "name": "Nombre del Mensajero 2"
+    },
+    {
+      "code": "BOGOTA03",
+      "name": "Nombre del Mensajero 3"
+    },
+    {
+      "code": "BOGOTA04",
+      "name": "Nombre del Mensajero 4"
+    },
+    {
+      "code": "BOGOTA05",
+      "name": "Nombre del Mensajero 5"
+    },
+    {
+      "code": "BOGOTA06",
+      "name": "Nombre del Mensajero 6"
+    },
+    {
+      "code": "BOGOTA07",
+      "name": "Nombre del Mensajero 7"
+    },
+    {
+      "code": "BOGOTA08",
+      "name": "Luis Enrique"
+    },
+    {
+      "code": "BOGOTA09",
+      "name": "Nombre del Mensajero 9"
+    },
+    {
+      "code": "BOGOTA10",
+      "name": "Nombre del Mensajero 10"
+    }
+  ]
+}

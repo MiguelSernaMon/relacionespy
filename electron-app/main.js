@@ -36,6 +36,73 @@ app.on('window-all-closed', function () {
 });
 
 // ============================================
+// MESSENGER MAPPING FUNCTIONS
+// ============================================
+
+function getMessengerMappingsPath() {
+  return path.join(app.getPath('userData'), 'messenger-mappings.json');
+}
+
+function loadMessengerMappings() {
+  try {
+    const mappingsPath = getMessengerMappingsPath();
+    if (fs.existsSync(mappingsPath)) {
+      const data = fs.readFileSync(mappingsPath, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.warn('Error loading messenger mappings:', error.message);
+  }
+  
+  // Return default mappings if file doesn't exist or error
+  return {
+    mappings: [
+      { code: "BOGOTA01", name: "Nombre del Mensajero 1" },
+      { code: "BOGOTA02", name: "Nombre del Mensajero 2" },
+      { code: "BOGOTA03", name: "Nombre del Mensajero 3" },
+      { code: "BOGOTA04", name: "Nombre del Mensajero 4" },
+      { code: "BOGOTA05", name: "Nombre del Mensajero 5" },
+      { code: "BOGOTA06", name: "Nombre del Mensajero 6" },
+      { code: "BOGOTA07", name: "Nombre del Mensajero 7" },
+      { code: "BOGOTA08", name: "Luis Enrique" },
+      { code: "BOGOTA09", name: "Nombre del Mensajero 9" },
+      { code: "BOGOTA10", name: "Nombre del Mensajero 10" }
+    ]
+  };
+}
+
+function saveMessengerMappings(mappings) {
+  try {
+    const mappingsPath = getMessengerMappingsPath();
+    fs.writeFileSync(mappingsPath, JSON.stringify(mappings, null, 2), 'utf8');
+    return true;
+  } catch (error) {
+    console.error('Error saving messenger mappings:', error.message);
+    return false;
+  }
+}
+
+function applyMessengerMapping(messengerName, mappings) {
+  if (!messengerName || typeof messengerName !== 'string') {
+    return messengerName;
+  }
+  
+  const trimmedName = messengerName.trim();
+  if (!trimmedName) return messengerName;
+  
+  // Find a mapping that matches the messenger code
+  const mapping = mappings.find(m => 
+    m.code && trimmedName.toUpperCase().includes(m.code.toUpperCase())
+  );
+  
+  if (mapping) {
+    return mapping.name;
+  }
+  
+  return messengerName;
+}
+
+// ============================================
 // UTILIDADES
 // ============================================
 
@@ -442,6 +509,18 @@ ipcMain.handle('select-folder', async (event, title) => {
 });
 
 // ============================================
+// MESSENGER MAPPINGS IPC HANDLERS
+// ============================================
+
+ipcMain.handle('get-messenger-mappings', async () => {
+  return loadMessengerMappings();
+});
+
+ipcMain.handle('save-messenger-mappings', async (event, mappings) => {
+  return saveMessengerMappings(mappings);
+});
+
+// ============================================
 // CACHE IPC HANDLERS
 // ============================================
 
@@ -770,6 +849,9 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
       ehlpharmaData = leerExcelInteligente(ehlpharmaPath);
     }
     
+    // Cargar mapeos de mensajeros
+    const messengerMappings = loadMessengerMappings();
+    
     // Leer archivo Ofimatic (header en fila 4)
     const ofimaticWorkbook = XLSX.readFile(ofimaticPath);
     const ofimaticSheet = ofimaticWorkbook.Sheets[ofimaticWorkbook.SheetNames[0]];
@@ -949,8 +1031,12 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
         // Dirección: si hay match con Ehlpharma, usar addressPatient
         const direccionFinal = mapeoDireccion[nit] || row['DIRECCION'] || '';
         
+        // Aplicar mapeo de mensajero si está disponible
+        const nombreMensajeroOriginal = row['NomMensajero'] || '';
+        const nombreMensajeroMapeado = applyMessengerMapping(nombreMensajeroOriginal, messengerMappings.mappings);
+        
         return {
-          'Nombre Vehiculo': row['NomMensajero'] || '',
+          'Nombre Vehiculo': nombreMensajeroMapeado,
           'Título de la Visita': titulo,
           'Dirección': direccionFinal,
           'Latitud': '',

@@ -34,6 +34,14 @@ const cacheActions = document.getElementById('cacheActions');
 const clearCacheBtn = document.getElementById('clearCacheBtn');
 const addToCacheBtn = document.getElementById('addToCacheBtn');
 
+// Messenger Mappings DOM elements
+const messengerMappingsBtn = document.getElementById('messengerMappingsBtn');
+const messengerMappingsModal = document.getElementById('messengerMappingsModal');
+const messengerMappingsClose = document.getElementById('messengerMappingsClose');
+const messengerMappingsList = document.getElementById('messengerMappingsList');
+const addMappingBtn = document.getElementById('addMappingBtn');
+const saveMappingsBtn = document.getElementById('saveMappingsBtn');
+
 // ============================================
 // CACHE UI
 // ============================================
@@ -419,6 +427,172 @@ function resetForm() {
     resetFiles();
     loadCacheUI(); // Refrescar panel de caché
 }
+
+// ============================================
+// MESSENGER MAPPINGS UI
+// ============================================
+
+// Abrir modal de mapeos de mensajeros
+messengerMappingsBtn.addEventListener('click', async () => {
+    await loadMessengerMappings();
+    messengerMappingsModal.style.display = 'block';
+});
+
+// Cerrar modal
+messengerMappingsClose.addEventListener('click', () => {
+    messengerMappingsModal.style.display = 'none';
+});
+
+// Cerrar modal al hacer clic fuera
+window.addEventListener('click', (event) => {
+    if (event.target === messengerMappingsModal) {
+        messengerMappingsModal.style.display = 'none';
+    }
+});
+
+// Cargar mapeos de mensajeros
+async function loadMessengerMappings() {
+    try {
+        const mappings = await window.electronAPI.getMessengerMappings();
+        renderMessengerMappings(mappings.mappings);
+    } catch (error) {
+        console.error('Error cargando mapeos de mensajeros:', error);
+        alert('Error al cargar los mapeos de mensajeros: ' + error.message);
+    }
+}
+
+// Renderizar lista de mapeos
+function renderMessengerMappings(mappings) {
+    messengerMappingsList.innerHTML = '';
+    
+    if (!mappings || mappings.length === 0) {
+        messengerMappingsList.innerHTML = `
+            <div class="mapping-empty">
+                <span>🔍 No hay mapeos configurados</span>
+                <small>Usa el botón ➕ para agregar nuevos mapeos</small>
+            </div>
+        `;
+        return;
+    }
+    
+    mappings.forEach((mapping, index) => {
+        const div = document.createElement('div');
+        div.className = 'mapping-item';
+        div.innerHTML = `
+            <div class="mapping-item-info">
+                <div class="mapping-item-code">
+                    <input type="text" class="mapping-code-input" value="${mapping.code || ''}" 
+                           placeholder="Código (ej: BOGOTA08)" data-index="${index}">
+                </div>
+                <div class="mapping-item-arrow">→</div>
+                <div class="mapping-item-name">
+                    <input type="text" class="mapping-name-input" value="${mapping.name || ''}" 
+                           placeholder="Nombre del mensajero" data-index="${index}">
+                </div>
+            </div>
+            <button class="mapping-item-remove" title="Eliminar este mapeo" data-index="${index}">✕</button>
+        `;
+        messengerMappingsList.appendChild(div);
+    });
+    
+    // Attach event listeners to inputs
+    messengerMappingsList.querySelectorAll('.mapping-code-input, .mapping-name-input').forEach(input => {
+        input.addEventListener('input', () => {
+            saveMappingsBtn.disabled = false;
+        });
+    });
+    
+    // Attach remove handlers
+    messengerMappingsList.querySelectorAll('.mapping-item-remove').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const index = parseInt(e.currentTarget.dataset.index);
+            removeMapping(index);
+        });
+    });
+}
+
+// Agregar nuevo mapeo
+addMappingBtn.addEventListener('click', () => {
+    const currentMappings = getCurrentMappings();
+    currentMappings.push({ code: '', name: '' });
+    renderMessengerMappings(currentMappings);
+    saveMappingsBtn.disabled = false;
+});
+
+// Eliminar mapeo
+function removeMapping(index) {
+    const currentMappings = getCurrentMappings();
+    if (index >= 0 && index < currentMappings.length) {
+        currentMappings.splice(index, 1);
+        renderMessengerMappings(currentMappings);
+        saveMappingsBtn.disabled = false;
+    }
+}
+
+// Obtener mapeos actuales del DOM
+function getCurrentMappings() {
+    const mappings = [];
+    const codeInputs = messengerMappingsList.querySelectorAll('.mapping-code-input');
+    const nameInputs = messengerMappingsList.querySelectorAll('.mapping-name-input');
+    
+    for (let i = 0; i < codeInputs.length; i++) {
+        const code = codeInputs[i].value.trim();
+        const name = nameInputs[i].value.trim();
+        
+        // Solo incluir si tiene código
+        if (code) {
+            mappings.push({ code, name });
+        }
+    }
+    
+    return mappings;
+}
+
+// Guardar mapeos
+saveMappingsBtn.addEventListener('click', async () => {
+    try {
+        saveMappingsBtn.disabled = true;
+        saveMappingsBtn.textContent = '⏳ Guardando...';
+        
+        const currentMappings = getCurrentMappings();
+        
+        // Validar que haya al menos un mapeo
+        if (currentMappings.length === 0) {
+            alert('Debe haber al menos un mapeo configurado.');
+            saveMappingsBtn.disabled = false;
+            saveMappingsBtn.textContent = '💾 Guardar Cambios';
+            return;
+        }
+        
+        // Validar códigos únicos
+        const codes = currentMappings.map(m => m.code.toUpperCase());
+        const uniqueCodes = [...new Set(codes)];
+        if (codes.length !== uniqueCodes.length) {
+            alert('Los códigos de mensajero deben ser únicos.');
+            saveMappingsBtn.disabled = false;
+            saveMappingsBtn.textContent = '💾 Guardar Cambios';
+            return;
+        }
+        
+        const success = await window.electronAPI.saveMessengerMappings({ mappings: currentMappings });
+        
+        if (success) {
+            saveMappingsBtn.textContent = '✅ Guardado';
+            setTimeout(() => {
+                saveMappingsBtn.textContent = '💾 Guardar Cambios';
+            }, 2000);
+        } else {
+            alert('Error al guardar los mapeos.');
+            saveMappingsBtn.disabled = false;
+            saveMappingsBtn.textContent = '💾 Guardar Cambios';
+        }
+    } catch (error) {
+        console.error('Error guardando mapeos:', error);
+        alert('Error al guardar los mapeos: ' + error.message);
+        saveMappingsBtn.disabled = false;
+        saveMappingsBtn.textContent = '💾 Guardar Cambios';
+    }
+});
 
 // Inicializar UI
 modoSelector.value = currentMode;

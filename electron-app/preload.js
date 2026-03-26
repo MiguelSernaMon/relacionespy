@@ -9,5 +9,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getCacheInfo: () => ipcRenderer.invoke('get-cache-info'),
   addToCache: () => ipcRenderer.invoke('add-to-cache'),
   removeCacheFile: (fileId) => ipcRenderer.invoke('remove-cache-file', fileId),
-  clearCache: () => ipcRenderer.invoke('clear-cache')
+  clearCache: () => ipcRenderer.invoke('clear-cache'),
+  getMessengerMappings: () => ipcRenderer.invoke('get-messenger-mappings'),
+  saveMessengerMappings: (mappings) => ipcRenderer.invoke('save-messenger-mappings', mappings)
 });

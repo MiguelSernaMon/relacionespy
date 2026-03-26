@@ -11,6 +11,11 @@
         <div class="header">
             <h1>🚀 Creador de Relaciones Mailbox</h1>
             <p>Transforma planillas al formato Libro2 de manera fácil y rápida</p>
+            <div class="header-actions">
+                <button class="header-btn" id="messengerMappingsBtn">
+                    👤 Mapeos de Mensajeros
+                </button>
+            </div>
         </div>
         
         <!-- Selector de Modo -->
@@ -112,6 +117,37 @@
         
         <div class="result-section" id="result" style="display: none;">
             <div id="resultContent"></div>
+        </div>
+    </div>
+
+    <!-- Modal de Mapeos de Mensajeros -->
+    <div id="messengerMappingsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>👤 Mapeos de Mensajeros - Modo Bogotá</h2>
+                <span class="modal-close" id="messengerMappingsClose">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="modal-description">
+                    <p>Configura los mapeos de códigos de mensajero a nombres reales. Cuando se procese un archivo en modo Bogotá, los códigos como "BOGOTA08" se reemplazarán automáticamente por el nombre configurado (ej: "Luis Enrique").</p>
+                    <p><strong>Ejemplo:</strong> Si el mensajero aparece como "BOGOTA08" en la planilla, se cambiará a "Luis Enrique" en el archivo final.</p>
+                </div>
+                
+                <div class="mappings-container">
+                    <div class="mappings-header">
+                        <h3>📋 Mapeos Configurados</h3>
+                        <button class="mappings-add-btn" id="addMappingBtn">➕ Agregar Mapeo</button>
+                    </div>
+                    <div class="mappings-list" id="messengerMappingsList">
+                        <!-- Los mapeos se cargarán dinámicamente aquí -->
+                    </div>
+                </div>
+                
+                <div class="modal-actions">
+                    <button class="modal-save-btn" id="saveMappingsBtn" disabled>💾 Guardar Cambios</button>
+                    <button class="modal-cancel-btn" id="messengerMappingsClose">Cancelar</button>
+                </div>
+            </div>
         </div>
     </div>
 
