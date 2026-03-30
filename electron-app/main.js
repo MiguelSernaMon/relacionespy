@@ -18,7 +18,7 @@ function createWindow() {
   });
 
   mainWindow.loadFile('index.html');
-  
+
   // Descomentar para debug:
   // mainWindow.webContents.openDevTools();
 }
@@ -53,7 +53,7 @@ function loadMessengerMappings() {
   } catch (error) {
     console.warn('Error loading messenger mappings:', error.message);
   }
-  
+
   // Return default mappings if file doesn't exist or error
   return {
     mappings: [
@@ -86,19 +86,19 @@ function applyMessengerMapping(messengerName, mappings) {
   if (!messengerName || typeof messengerName !== 'string') {
     return messengerName;
   }
-  
+
   const trimmedName = messengerName.trim();
   if (!trimmedName) return messengerName;
-  
+
   // Find a mapping that matches the messenger code
-  const mapping = mappings.find(m => 
+  const mapping = mappings.find(m =>
     m.code && trimmedName.toUpperCase().includes(m.code.toUpperCase())
   );
-  
+
   if (mapping) {
     return mapping.name;
   }
-  
+
   return messengerName;
 }
 
@@ -121,36 +121,36 @@ function limpiarDatos(data) {
 
 function formatearExcel(worksheet, data) {
   if (!data || data.length === 0) return worksheet;
-  
+
   const range = XLSX.utils.decode_range(worksheet['!ref']);
-  
+
   // Calcular anchos de columna basados en el contenido
   const colWidths = [];
   const headers = Object.keys(data[0]);
-  
+
   headers.forEach((header, colIndex) => {
     let maxWidth = header.length;
-    
+
     data.forEach(row => {
       const cellValue = String(row[header] || '');
       maxWidth = Math.max(maxWidth, cellValue.length);
     });
-    
+
     // Limitar el ancho máximo y mínimo (con un poco más de espacio)
     colWidths.push({ wch: Math.min(Math.max(maxWidth + 3, 12), 60) });
   });
-  
+
   worksheet['!cols'] = colWidths;
-  
+
   // Estilo para los encabezados (primera fila)
   const headerStyle = {
-    font: { 
-      bold: true, 
+    font: {
+      bold: true,
       sz: 11,
       color: { rgb: "000000" }
     },
-    fill: { 
-      fgColor: { rgb: "D9D9D9" } 
+    fill: {
+      fgColor: { rgb: "D9D9D9" }
     },
     border: {
       top: { style: 'thin', color: { rgb: "000000" } },
@@ -158,13 +158,13 @@ function formatearExcel(worksheet, data) {
       left: { style: 'thin', color: { rgb: "000000" } },
       right: { style: 'thin', color: { rgb: "000000" } }
     },
-    alignment: { 
-      horizontal: 'center', 
+    alignment: {
+      horizontal: 'center',
       vertical: 'center',
       wrapText: false
     }
   };
-  
+
   // Aplicar estilo a los encabezados (fila 0)
   for (let col = range.s.c; col <= range.e.c; col++) {
     const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
@@ -172,16 +172,16 @@ function formatearExcel(worksheet, data) {
       worksheet[cellAddress].s = headerStyle;
     }
   }
-  
+
   // Estilo para las celdas de datos (alineación a la izquierda)
   const dataStyle = {
-    alignment: { 
-      horizontal: 'left', 
+    alignment: {
+      horizontal: 'left',
       vertical: 'center',
       wrapText: false
     }
   };
-  
+
   // Aplicar estilo a las celdas de datos
   for (let row = range.s.r + 1; row <= range.e.r; row++) {
     for (let col = range.s.c; col <= range.e.c; col++) {
@@ -191,7 +191,7 @@ function formatearExcel(worksheet, data) {
       }
     }
   }
-  
+
   return worksheet;
 }
 
@@ -199,37 +199,37 @@ function leerExcelInteligente(filePath, skipRows = 0) {
   const workbook = XLSX.readFile(filePath);
   const sheetName = workbook.SheetNames[0];
   const worksheet = workbook.Sheets[sheetName];
-  
+
   // Leer con skiprows si se especifica
-  let data = XLSX.utils.sheet_to_json(worksheet, { 
+  let data = XLSX.utils.sheet_to_json(worksheet, {
     defval: '',
     range: skipRows
   });
-  
+
   // Detectar columnas conocidas
   const columnasConocidas = [
     'idOrder', 'authorizationNumber', 'identificationPatient',
     'IDENTIFICACION', 'NUMERO DE PEDIDO', 'DOCUMENTO ASOCIADO',
     'nit', 'Nrodcto', 'NomMensajero'
   ];
-  
-  const tieneColumnasConocidas = data.length > 0 && 
+
+  const tieneColumnasConocidas = data.length > 0 &&
     columnasConocidas.some(col => Object.keys(data[0]).includes(col));
-  
+
   if (!tieneColumnasConocidas) {
     // Intentar con diferentes skiprows
     for (let skip = 1; skip < 10; skip++) {
-      const testData = XLSX.utils.sheet_to_json(worksheet, { 
-        defval: '', 
-        range: skip 
+      const testData = XLSX.utils.sheet_to_json(worksheet, {
+        defval: '',
+        range: skip
       });
-      
+
       if (testData.length > 0 && columnasConocidas.some(col => Object.keys(testData[0]).includes(col))) {
         return limpiarDatos(testData);
       }
     }
   }
-  
+
   return limpiarDatos(data);
 }
 
@@ -245,28 +245,61 @@ function normalizarNit(valor) {
 // Función para parsear fechas en diferentes formatos
 function parsearFecha(fechaStr) {
   if (!fechaStr) return null;
-  
+
+  // ─── CASO 1: xlsx-js-style devuelve Date object directo (celdas "fecha corta" de Excel)
+  // Esos Date son UTC midnight → en Colombia (UTC-5) se muestran como el día anterior.
+  // Solución: extraer componentes UTC y construir un Date local correcto.
+  if (fechaStr instanceof Date) {
+    if (isNaN(fechaStr.getTime())) return null;
+    return new Date(fechaStr.getUTCFullYear(), fechaStr.getUTCMonth(), fechaStr.getUTCDate());
+  }
+
   const str = String(fechaStr).trim();
   if (!str) return null;
-  
-  // Intentar formato DD/MM/YYYY (30/12/2025)
-  const matchDDMMYYYY = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
-  if (matchDDMMYYYY) {
-    const day = parseInt(matchDDMMYYYY[1], 10);
-    const month = parseInt(matchDDMMYYYY[2], 10) - 1; // Meses en JS son 0-indexed
-    const year = parseInt(matchDDMMYYYY[3], 10);
+
+  // Primero, verificar si es un número (Excel serial date)
+  // Los serial dates de Excel son números como 46106, 46107
+  if (/^\d+(\.\d+)?$/.test(str)) {
+    const excelSerial = parseFloat(str);
+    // Excel serial date: días desde 30 de diciembre de 1899
+    // JavaScript Date: milisegundos desde 1 de enero de 1970
+    // Diferencia: 25569 días (70 años * 365 días + 17 días bisiestos)
+    // IMPORTANTE: new Date(ms) crea fecha UTC. En Colombia (UTC-5) la medianoche UTC
+    // corresponde a las 7pm del día anterior, desplazando la fecha -1 día.
+    // Solución: extraer componentes UTC y crear un Date local.
+    const utcMs = (excelSerial - 25569) * 86400 * 1000;
+    const utcDate = new Date(utcMs);
+    if (!isNaN(utcDate.getTime())) {
+      return new Date(utcDate.getUTCFullYear(), utcDate.getUTCMonth(), utcDate.getUTCDate());
+    }
+  }
+
+  // Intentar formato con separadores: DD/MM/YY, DD/MM/YYYY, MM/DD/YY, MM/DD/YYYY
+  // Detectamos el formato por descarte:
+  //   - Si n1 > 12 → sólo puede ser día → DD/MM/...
+  //   - Si n2 > 12 → sólo puede ser día → MM/DD/... (formato Ofimatic norteamericano)
+  //   - Si ambos ≤ 12 → ambiguo → asumimos DD/MM (formato colombiano)
+  // Soporta años de 2 dígitos (ej: "25/03/26" → 2026)
+  const matchFecha = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+  if (matchFecha) {
+    const n1 = parseInt(matchFecha[1], 10);
+    const n2 = parseInt(matchFecha[2], 10);
+    let year = parseInt(matchFecha[3], 10);
+    if (year < 100) year += 2000; // "26" → 2026
+    let day, month;
+    if (n1 > 12) {
+      // n1 no puede ser mes → DD/MM/...
+      day = n1; month = n2 - 1;
+    } else if (n2 > 12) {
+      // n2 no puede ser mes → MM/DD/... (ej: "3/25/2026")
+      month = n1 - 1; day = n2;
+    } else {
+      // Ambiguo: asumir DD/MM (formato colombiano)
+      day = n1; month = n2 - 1;
+    }
     return new Date(year, month, day);
   }
-  
-  // Intentar formato MM/DD/YYYY (12/30/2025)
-  const matchMMDDYYYY = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
-  if (matchMMDDYYYY) {
-    const month = parseInt(matchMMDDYYYY[1], 10) - 1;
-    const day = parseInt(matchMMDDYYYY[2], 10);
-    const year = parseInt(matchMMDDYYYY[3], 10);
-    return new Date(year, month, day);
-  }
-  
+
   // Intentar formato YYYY-MM-DD
   const matchYYYYMMDD = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
   if (matchYYYYMMDD) {
@@ -275,13 +308,15 @@ function parsearFecha(fechaStr) {
     const day = parseInt(matchYYYYMMDD[3], 10);
     return new Date(year, month, day);
   }
-  
-  // Intentar parsear como fecha ISO
+
+  // Intentar parsear como fecha ISO (YYYY-MM-DDTHH:mm:ss o similar)
+  // new Date("YYYY-MM-DD") por spec crea fecha UTC → mismo problema de zona horaria.
+  // Extraemos componentes UTC para crear un Date local correcto.
   const date = new Date(str);
   if (!isNaN(date.getTime())) {
-    return date;
+    return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
   }
-  
+
   return null;
 }
 
@@ -294,28 +329,28 @@ function diferenciaEnDias(fecha1, fecha2) {
 
 function formatearTelefono(telefono) {
   if (!telefono) return { formateado: '', esValido: false };
-  
+
   // Convertir a string y limpiar espacios, guiones, paréntesis, etc.
   let tel = String(telefono).trim();
   tel = tel.replace(/[\s\-\(\)\.]/g, '');
-  
+
   // Si ya tiene +57, quitarlo temporalmente para validar
   if (tel.startsWith('+57')) {
     tel = tel.substring(3);
   } else if (tel.startsWith('57') && tel.length === 12) {
     tel = tel.substring(2);
   }
-  
+
   // Validar que sea un móvil colombiano válido:
   // - Debe tener exactamente 10 dígitos
   // - Debe empezar con 3
   // - Solo debe contener números
   const esMovilValido = /^3\d{9}$/.test(tel);
-  
+
   if (esMovilValido) {
     return { formateado: `+57${tel}`, esValido: true };
   }
-  
+
   // Si no es un móvil válido, retornar vacío
   return { formateado: '', esValido: false };
 }
@@ -487,7 +522,7 @@ ipcMain.handle('select-file', async (event, title) => {
       { name: 'Excel/CSV Files', extensions: ['xlsx', 'xls', 'csv'] }
     ]
   });
-  
+
   if (!result.canceled && result.filePaths.length > 0) {
     return result.filePaths[0];
   }
@@ -501,7 +536,7 @@ ipcMain.handle('select-folder', async (event, title) => {
     properties: ['openDirectory', 'createDirectory'],
     title: title
   });
-  
+
   if (!result.canceled && result.filePaths.length > 0) {
     return result.filePaths[0];
   }
@@ -532,7 +567,7 @@ ipcMain.handle('add-to-cache', async (event) => {
   try {
     // Usar la ventana del sender para máxima compatibilidad (portables Windows)
     const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow() || mainWindow;
-    
+
     const result = await dialog.showOpenDialog(win, {
       properties: ['openFile', 'multiSelections'],
       title: 'Agregar Planilla(s) Madre al Caché',
@@ -601,26 +636,26 @@ ipcMain.handle('process-medellin', async (event, madrePath, ofimaticPath, output
         madreData = leerExcelInteligente(madrePath);
       }
     }
-    
+
     // Leer planilla ofimatic (header en fila 4)
     const ofimaticWorkbook = XLSX.readFile(ofimaticPath);
     const ofimaticSheet = ofimaticWorkbook.Sheets[ofimaticWorkbook.SheetNames[0]];
-    let ofimaticData = XLSX.utils.sheet_to_json(ofimaticSheet, { 
+    let ofimaticData = XLSX.utils.sheet_to_json(ofimaticSheet, {
       defval: '',
       range: 3
     });
     ofimaticData = limpiarDatos(ofimaticData);
-    
+
     // Crear mapeos desde planilla madre: almacenar múltiples órdenes por identificación con sus fechas
     // Busca ambos formatos de columna (Medellín y Bogotá) para compatibilidad con caché mixto
     const ordenesPorIdentificacion = {}; // { identificacion: [{idOrder, fecha, telefono, direccion}, ...] }
-    
+
     madreData.forEach(row => {
       const identificacion = normalizarNit(row['identificationPatient']) || normalizarNit(row['IDENTIFICACION']);
       const idOrder = row['idOrder'] || row['NUMERO DE PEDIDO'] || '';
       const telefonoPaciente = row['mobilePhonePatient'] || '';
       const direccionPaciente = row['addressPatient'] || '';
-      
+
       // Obtener fecha del pedido - buscar en diferentes columnas posibles
       // Para Bogotá: buscar específicamente "FECHA DE ENTREGA" (formato YYYY-MM-DD)
       let fechaPedido = null;
@@ -631,12 +666,12 @@ ipcMain.handle('process-medellin', async (event, madrePath, ofimaticPath, output
           if (fechaPedido) break;
         }
       }
-      
+
       if (identificacion && idOrder) {
         if (!ordenesPorIdentificacion[identificacion]) {
           ordenesPorIdentificacion[identificacion] = [];
         }
-        
+
         ordenesPorIdentificacion[identificacion].push({
           idOrder: idOrder,
           fecha: fechaPedido,
@@ -645,11 +680,11 @@ ipcMain.handle('process-medellin', async (event, madrePath, ofimaticPath, output
         });
       }
     });
-    
+
     // Crear mapeos simples para compatibilidad (telefono y dirección del pedido más reciente)
     const mapeoTelefono = {};
     const mapeoDireccion = {};
-    
+
     Object.keys(ordenesPorIdentificacion).forEach(identificacion => {
       const ordenes = ordenesPorIdentificacion[identificacion];
       if (ordenes.length > 0) {
@@ -659,20 +694,20 @@ ipcMain.handle('process-medellin', async (event, madrePath, ofimaticPath, output
           if (!current.fecha) return latest;
           return current.fecha > latest.fecha ? current : latest;
         }, ordenes[0]);
-        
+
         if (ordenMasReciente.telefono) {
           const resultadoTel = formatearTelefono(ordenMasReciente.telefono);
           if (resultadoTel.esValido) {
             mapeoTelefono[identificacion] = resultadoTel.formateado;
           }
         }
-        
+
         if (ordenMasReciente.direccion && String(ordenMasReciente.direccion).trim()) {
           mapeoDireccion[identificacion] = String(ordenMasReciente.direccion).trim();
         }
       }
     });
-    
+
     // Función para verificar si una fila es válida
     function esFilaValida(row) {
       // Verificar que existan valores importantes
@@ -680,44 +715,54 @@ ipcMain.handle('process-medellin', async (event, madrePath, ofimaticPath, output
       const nombre = String(row['NOMBRE'] || '').trim();
       const mensajero = String(row['NomMensajero'] || '').trim();
       const direccion = String(row['DIRECCION'] || '').trim();
-      
+
       // Si no hay dirección, la fila no es válida
       if (!direccion) return false;
-      
+
       // Si no hay nombre ni NIT, la fila no es válida
       if (!nombre && !nit) return false;
-      
+
       // Verificar que el mensajero no sea solo un número (dato erróneo)
       if (mensajero && /^\d+$/.test(mensajero)) return false;
-      
+
       return true;
     }
-    
+
     // Procesar datos y contar relaciones
     let pedidosRelacionados = 0;
     let telefonosValidos = 0;
     let telefonosTotales = 0;
-    
+
+    // Debug: contar cuántas órdenes tienen fechas válidas
+    let ordenesConFechas = 0;
+    let ordenesSinFechas = 0;
+    Object.keys(ordenesPorIdentificacion).forEach(identificacion => {
+      ordenesPorIdentificacion[identificacion].forEach(orden => {
+        if (orden.fecha) ordenesConFechas++;
+        else ordenesSinFechas++;
+      });
+    });
+
     const libro2Data = ofimaticData
       .filter(row => esFilaValida(row)) // Filtrar filas inválidas
       .map(row => {
         const nit = normalizarNit(row['nit']);
-        
+
         // Obtener fecha de la fila ofimatic (columna "fecha" con formato "12/30/2025")
         const fechaOfimatic = parsearFecha(row['fecha'] || row['Fecha'] || row['FECHA']);
-        
+
         let idOrderSeleccionado = '';
         let idOrderStr = '';
-        
+
         // Buscar el pedido con la fecha más cercana
         if (ordenesPorIdentificacion[nit] && ordenesPorIdentificacion[nit].length > 0) {
           const ordenes = ordenesPorIdentificacion[nit];
-          
+
           if (fechaOfimatic) {
             // Si tenemos fecha en ofimatic, encontrar el pedido con fecha más cercana
             let mejorOrden = null;
             let menorDiferencia = Infinity;
-            
+
             ordenes.forEach(orden => {
               if (orden.fecha) {
                 const diferencia = diferenciaEnDias(orden.fecha, fechaOfimatic);
@@ -727,7 +772,7 @@ ipcMain.handle('process-medellin', async (event, madrePath, ofimaticPath, output
                 }
               }
             });
-            
+
             if (mejorOrden) {
               idOrderSeleccionado = mejorOrden.idOrder;
             } else {
@@ -738,7 +783,7 @@ ipcMain.handle('process-medellin', async (event, madrePath, ofimaticPath, output
             // Si no hay fecha en ofimatic, usar el pedido más reciente (último en el array)
             idOrderSeleccionado = ordenes[ordenes.length - 1].idOrder;
           }
-          
+
           if (idOrderSeleccionado) {
             idOrderStr = String(idOrderSeleccionado);
             if (idOrderStr.endsWith('.0')) {
@@ -747,20 +792,20 @@ ipcMain.handle('process-medellin', async (event, madrePath, ofimaticPath, output
             pedidosRelacionados++; // Incrementar contador
           }
         }
-        
-        const nrodctoRelacionado = idOrderStr 
+
+        const nrodctoRelacionado = idOrderStr
           ? `${row['Nrodcto']}-${idOrderStr}`
           : String(row['Nrodcto'] || '');
-        
+
         // Crear título de visita
         let nombre = String(row['NOMBRE'] || '').trim();
         nombre = nombre.replace(/\s+/g, ' ');
         const titulo = nombre && nit ? `${nombre} - ${nit}` : (nombre || nit);
-        
+
         // Formatear teléfono: prioridad al de Helpharma, si no usar el de Ofimatic
         const telefonoHelpharma = mapeoTelefono[nit] || '';
         let telefonoFinal = '';
-        
+
         if (telefonoHelpharma) {
           // Si Helpharma tiene un móvil válido, usarlo directamente
           telefonoFinal = telefonoHelpharma;
@@ -777,10 +822,10 @@ ipcMain.handle('process-medellin', async (event, madrePath, ofimaticPath, output
           }
           telefonoFinal = resultadoTelefono.formateado;
         }
-        
+
         // Dirección: si hay match con la madre, usar addressPatient
         const direccionFinal = mapeoDireccion[nit] || row['DIRECCION'] || '';
-        
+
         return {
           'Nombre Vehiculo': String(row['NomMensajero'] || '').trim(),
           'Título de la Visita': titulo,
@@ -794,17 +839,17 @@ ipcMain.handle('process-medellin', async (event, madrePath, ofimaticPath, output
           'Emails': ''
         };
       });
-    
+
     // Crear y guardar archivo
     const newWorkbook = XLSX.utils.book_new();
     const newWorksheet = XLSX.utils.json_to_sheet(libro2Data);
     formatearExcel(newWorksheet, libro2Data);
     XLSX.utils.book_append_sheet(newWorkbook, newWorksheet, 'Hoja1');
-    
+
     const outputDir = outputFolder || app.getPath('downloads');
     const outputPath = path.join(outputDir, `Libro2_Medellin_${getTimestamp()}.xlsx`);
     XLSX.writeFile(newWorkbook, outputPath);
-    
+
     return {
       success: true,
       message: `Archivo generado con ${libro2Data.length} registros. (Caché: ${madreData.length} registros madre, ${Object.keys(ordenesPorIdentificacion).length} identificaciones con órdenes)`,
@@ -820,10 +865,12 @@ ipcMain.handle('process-medellin', async (event, madrePath, ofimaticPath, output
         identificacionesConOrdenes: Object.keys(ordenesPorIdentificacion).length,
         nitsEnOfimatic: ofimaticData.slice(0, 5).map(r => normalizarNit(r['nit'])),
         nitsEnMadre: Object.keys(ordenesPorIdentificacion).slice(0, 5),
-        columnasEnMadre: madreData.length > 0 ? Object.keys(madreData[0]) : []
+        columnasEnMadre: madreData.length > 0 ? Object.keys(madreData[0]) : [],
+        ordenesConFechas: ordenesConFechas,
+        ordenesSinFechas: ordenesSinFechas
       }
     };
-    
+
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -848,23 +895,23 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
     if (!ehlpharmaData || ehlpharmaData.length === 0) {
       ehlpharmaData = leerExcelInteligente(ehlpharmaPath);
     }
-    
+
     // Cargar mapeos de mensajeros
     const messengerMappings = loadMessengerMappings();
-    
+
     // Leer archivo Ofimatic (header en fila 4)
     const ofimaticWorkbook = XLSX.readFile(ofimaticPath);
     const ofimaticSheet = ofimaticWorkbook.Sheets[ofimaticWorkbook.SheetNames[0]];
-    let ofimaticData = XLSX.utils.sheet_to_json(ofimaticSheet, { 
+    let ofimaticData = XLSX.utils.sheet_to_json(ofimaticSheet, {
       defval: '',
       range: 3
     });
     ofimaticData = limpiarDatos(ofimaticData);
-    
+
     // Crear mapeos desde Ehlpharma: almacenar múltiples órdenes por identificación con sus fechas
     // Busca ambos formatos de columna (Medellín y Bogotá) para compatibilidad con caché mixto
     const ordenesPorIdentificacion = {}; // { identificacion: [{idOrder, fecha, telefono, direccion}, ...] }
-    
+
     ehlpharmaData.forEach(row => {
       const identificacion = normalizarNit(row['IDENTIFICACION']) || normalizarNit(row['identificationPatient']);
       const numeroPedido = row['NUMERO DE PEDIDO'] || row['idOrder'] || '';
@@ -872,7 +919,7 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
       const telefonoPaciente = row['CELULAR'] || row['mobilePhonePatient'] || '';
       // Para Bogotá, buscar columna DIRECCION DE ENTREGA (feedback del usuario)
       const direccionPaciente = row['DIRECCION DE ENTREGA'] || row['addressPatient'] || '';
-      
+
       // Obtener fecha del pedido - buscar en diferentes columnas posibles
       // Para Bogotá: buscar específicamente "FECHA DE ENTREGA" (formato YYYY-MM-DD: 2026-01-23)
       let fechaPedido = null;
@@ -883,12 +930,12 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
           if (fechaPedido) break;
         }
       }
-      
+
       if (identificacion && numeroPedido) {
         if (!ordenesPorIdentificacion[identificacion]) {
           ordenesPorIdentificacion[identificacion] = [];
         }
-        
+
         ordenesPorIdentificacion[identificacion].push({
           idOrder: numeroPedido,
           fecha: fechaPedido,
@@ -897,11 +944,11 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
         });
       }
     });
-    
+
     // Crear mapeos simples para compatibilidad (telefono y dirección del pedido más reciente)
     const mapeoTelefono = {};
     const mapeoDireccion = {};
-    
+
     Object.keys(ordenesPorIdentificacion).forEach(identificacion => {
       const ordenes = ordenesPorIdentificacion[identificacion];
       if (ordenes.length > 0) {
@@ -911,20 +958,20 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
           if (!current.fecha) return latest;
           return current.fecha > latest.fecha ? current : latest;
         }, ordenes[0]);
-        
+
         if (ordenMasReciente.telefono) {
           const resultadoTel = formatearTelefono(ordenMasReciente.telefono);
           if (resultadoTel.esValido) {
             mapeoTelefono[identificacion] = resultadoTel.formateado;
           }
         }
-        
+
         if (ordenMasReciente.direccion && String(ordenMasReciente.direccion).trim()) {
           mapeoDireccion[identificacion] = String(ordenMasReciente.direccion).trim();
         }
       }
     });
-    
+
     // Función para verificar si una fila es válida
     function esFilaValida(row) {
       // Verificar que existan valores importantes
@@ -932,44 +979,44 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
       const nombre = String(row['NOMBRE'] || '').trim();
       const mensajero = String(row['NomMensajero'] || '').trim();
       const direccion = String(row['DIRECCION'] || '').trim();
-      
+
       // Si no hay dirección, la fila no es válida
       if (!direccion) return false;
-      
+
       // Si no hay nombre ni NIT, la fila no es válida
       if (!nombre && !nit) return false;
-      
+
       // Verificar que el mensajero no sea solo un número (dato erróneo)
       if (mensajero && /^\d+$/.test(mensajero)) return false;
-      
+
       return true;
     }
-    
+
     // Procesar datos y contar relaciones
     let pedidosRelacionados = 0;
     let telefonosValidos = 0;
     let telefonosTotales = 0;
-    
+
     const libro2Data = ofimaticData
       .filter(row => esFilaValida(row)) // Filtrar filas inválidas
       .map(row => {
         const nit = normalizarNit(row['nit']);
-        
+
         // Obtener fecha de la fila ofimatic (columna "fecha" con formato "12/30/2025")
         const fechaOfimatic = parsearFecha(row['fecha'] || row['Fecha'] || row['FECHA']);
-        
+
         let idOrderSeleccionado = '';
         let idOrderStr = '';
-        
+
         // Buscar el pedido con la fecha más cercana
         if (ordenesPorIdentificacion[nit] && ordenesPorIdentificacion[nit].length > 0) {
           const ordenes = ordenesPorIdentificacion[nit];
-          
+
           if (fechaOfimatic) {
             // Si tenemos fecha en ofimatic, encontrar el pedido con fecha más cercana
             let mejorOrden = null;
             let menorDiferencia = Infinity;
-            
+
             ordenes.forEach(orden => {
               if (orden.fecha) {
                 const diferencia = diferenciaEnDias(orden.fecha, fechaOfimatic);
@@ -979,7 +1026,7 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
                 }
               }
             });
-            
+
             if (mejorOrden) {
               idOrderSeleccionado = mejorOrden.idOrder;
             } else {
@@ -990,7 +1037,7 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
             // Si no hay fecha en ofimatic, usar el pedido más reciente (último en el array)
             idOrderSeleccionado = ordenes[ordenes.length - 1].idOrder;
           }
-          
+
           if (idOrderSeleccionado) {
             idOrderStr = String(idOrderSeleccionado);
             if (idOrderStr.endsWith('.0')) {
@@ -999,20 +1046,20 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
             pedidosRelacionados++; // Incrementar contador
           }
         }
-        
-        const nrodctoRelacionado = idOrderStr 
+
+        const nrodctoRelacionado = idOrderStr
           ? `${row['Nrodcto']}-${idOrderStr}`
           : String(row['Nrodcto'] || '');
-        
+
         // Crear título de visita con nombre y nit
         let nombre = String(row['NOMBRE'] || '').trim();
         nombre = nombre.replace(/\s+/g, ' ');
         const titulo = nombre && nit ? `${nombre} - ${nit}` : (nombre || nit);
-        
+
         // Formatear teléfono: prioridad al de Helpharma, si no usar el de Ofimatic
         const telefonoHelpharma = mapeoTelefono[nit] || '';
         let telefonoFinal = '';
-        
+
         if (telefonoHelpharma) {
           telefonoFinal = telefonoHelpharma;
           telefonosTotales++;
@@ -1027,14 +1074,14 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
           }
           telefonoFinal = resultadoTelefono.formateado;
         }
-        
+
         // Dirección: si hay match con Ehlpharma, usar addressPatient
         const direccionFinal = mapeoDireccion[nit] || row['DIRECCION'] || '';
-        
+
         // Aplicar mapeo de mensajero si está disponible
         const nombreMensajeroOriginal = row['NomMensajero'] || '';
         const nombreMensajeroMapeado = applyMessengerMapping(nombreMensajeroOriginal, messengerMappings.mappings);
-        
+
         return {
           'Nombre Vehiculo': nombreMensajeroMapeado,
           'Título de la Visita': titulo,
@@ -1048,17 +1095,17 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
           'Emails': ''
         };
       });
-    
+
     // Crear y guardar archivo
     const newWorkbook = XLSX.utils.book_new();
     const newWorksheet = XLSX.utils.json_to_sheet(libro2Data);
     formatearExcel(newWorksheet, libro2Data);
     XLSX.utils.book_append_sheet(newWorkbook, newWorksheet, 'Hoja1');
-    
+
     const outputDir = outputFolder || app.getPath('downloads');
     const outputPath = path.join(outputDir, `Libro2_Bogota_${getTimestamp()}.xlsx`);
     XLSX.writeFile(newWorkbook, outputPath);
-    
+
     return {
       success: true,
       message: `Archivo generado exitosamente con ${libro2Data.length} registros.`,
@@ -1070,7 +1117,7 @@ ipcMain.handle('process-bogota', async (event, ehlpharmaPath, ofimaticPath, outp
       telefonosTotales: telefonosTotales,
       cacheInfo: getCacheInfo(4)
     };
-    
+
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -1085,20 +1132,20 @@ ipcMain.handle('process-distrifarma', async (event, distrifarmaPath, outputFolde
   try {
     const workbook = XLSX.readFile(distrifarmaPath);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    
+
     // Detectar si tiene encabezados
     const primeraFila = XLSX.utils.sheet_to_json(sheet, { header: 1, range: 0 })[0] || [];
     const encabezadosConocidos = ['nombre vehiculo', 'titulo de la visita', 'dirección', 'direccion',
-                                   'persona de contacto', 'teléfono', 'telefono', 'cedula'];
-    
+      'persona de contacto', 'teléfono', 'telefono', 'cedula'];
+
     const primeraFilaLower = primeraFila.map(c => String(c || '').toLowerCase().trim());
     const tieneEncabezados = encabezadosConocidos.some(enc => primeraFilaLower.includes(enc));
-    
+
     let df;
     if (tieneEncabezados) {
       df = XLSX.utils.sheet_to_json(sheet, { defval: '' });
       df = limpiarDatos(df);
-      
+
       // Normalizar nombres de columnas
       const mapeoColumnas = {
         'nombre vehiculo': 'Nombre Vehiculo',
@@ -1113,7 +1160,7 @@ ipcMain.handle('process-distrifarma', async (event, distrifarmaPath, outputFolde
         'notas': 'Notas',
         'integrados': 'INTEGRADOS'
       };
-      
+
       df = df.map(row => {
         const newRow = {};
         Object.keys(row).forEach(key => {
@@ -1127,8 +1174,8 @@ ipcMain.handle('process-distrifarma', async (event, distrifarmaPath, outputFolde
       // Sin encabezados - asignar columnas por posición
       const rawData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
       const cols = ['Nombre Vehiculo', 'Titulo de la Visita', 'Dirección', 'ID Referencia',
-                    'Persona de Contacto', 'CEDULA', 'Teléfono', 'INTEGRADOS'];
-      
+        'Persona de Contacto', 'CEDULA', 'Teléfono', 'INTEGRADOS'];
+
       df = rawData.map(row => {
         const newRow = {};
         cols.forEach((col, i) => {
@@ -1138,7 +1185,7 @@ ipcMain.handle('process-distrifarma', async (event, distrifarmaPath, outputFolde
         return newRow;
       });
     }
-    
+
     // Función para procesar ID Referencia
     function procesarIdReferencia(valor) {
       if (!valor) return 'Diswifarma';
@@ -1150,7 +1197,7 @@ ipcMain.handle('process-distrifarma', async (event, distrifarmaPath, outputFolde
       }
       return `Diswifarma-${str}`;
     }
-    
+
     // Función para verificar si una fila es válida
     function esFilaValida(row) {
       const nombreVehiculo = String(row['Nombre Vehiculo'] || '').trim();
@@ -1158,23 +1205,23 @@ ipcMain.handle('process-distrifarma', async (event, distrifarmaPath, outputFolde
       const personaContacto = String(row['Persona de Contacto'] || '').trim();
       const direccion = String(row['Dirección'] || '').trim();
       const cedula = String(row['CEDULA'] || '').trim();
-      
+
       // Si no hay dirección, la fila no es válida
       if (!direccion) return false;
-      
+
       // Si no hay persona de contacto ni título, la fila no es válida
       if (!personaContacto && !titulo) return false;
-      
+
       // Verificar que el nombre del vehículo no sea solo un número (dato erróneo)
       if (nombreVehiculo && /^\d+$/.test(nombreVehiculo)) return false;
-      
+
       return true;
     }
-    
+
     // Crear datos Libro2
     let telefonosValidos = 0;
     let telefonosTotales = 0;
-    
+
     const libro2Data = df
       .filter(row => esFilaValida(row)) // Filtrar filas inválidas
       .map(row => {
@@ -1185,7 +1232,7 @@ ipcMain.handle('process-distrifarma', async (event, distrifarmaPath, outputFolde
         } else {
           titulo = row['Persona de Contacto'] || row['Titulo de la Visita'] || '';
         }
-        
+
         // Formatear teléfono y contar válidos
         const resultadoTelefono = formatearTelefono(row['Teléfono']);
         if (row['Teléfono'] && String(row['Teléfono']).trim()) {
@@ -1194,7 +1241,7 @@ ipcMain.handle('process-distrifarma', async (event, distrifarmaPath, outputFolde
             telefonosValidos++;
           }
         }
-        
+
         return {
           'Nombre Vehiculo': String(row['Nombre Vehiculo'] || '').trim(),
           'Título de la Visita': titulo,
@@ -1208,17 +1255,17 @@ ipcMain.handle('process-distrifarma', async (event, distrifarmaPath, outputFolde
           'Emails': row['Emails'] || ''
         };
       });
-    
+
     // Crear y guardar archivo
     const newWorkbook = XLSX.utils.book_new();
     const newWorksheet = XLSX.utils.json_to_sheet(libro2Data);
     formatearExcel(newWorksheet, libro2Data);
     XLSX.utils.book_append_sheet(newWorkbook, newWorksheet, 'Hoja1');
-    
+
     const outputDir = outputFolder || app.getPath('downloads');
     const outputPath = path.join(outputDir, `Libro2_Distrifarma_${getTimestamp()}.xlsx`);
     XLSX.writeFile(newWorkbook, outputPath);
-    
+
     return {
       success: true,
       message: `Archivo transformado exitosamente con ${libro2Data.length} registros.`,
@@ -1229,7 +1276,7 @@ ipcMain.handle('process-distrifarma', async (event, distrifarmaPath, outputFolde
       telefonosValidos: telefonosValidos,
       telefonosTotales: telefonosTotales
     };
-    
+
   } catch (error) {
     return { success: false, error: error.message };
   }
